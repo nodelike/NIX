@@ -1,56 +1,115 @@
+import os
+import sys
+import subprocess
+import argparse
 from datetime import datetime, timedelta
-import yfinance as yf
-import pandas as pd
 from zoneinfo import ZoneInfo
 
-# Set the end date to today with the correct timezone (IST for NIFTY)
-end_date = datetime.now(ZoneInfo("Asia/Kolkata"))
-# Calculate start date as exactly 30 days before end_date
-start_date = end_date - timedelta(days=24)
+# Add the project path to the system path
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-def get_chunked_data(ticker_symbol):
-    chunks = []
-    current_start = start_date
+from src.data_processing.data_loader import fetch_new_data, save_to_csv, get_latest_data
+from src.data_processing.features import extract_features
+from src.alphazero.trader import AlphaZeroTrader
+
+def main():
+    parser = argparse.ArgumentParser(description='AlphaZero Trading System for NIFTY and VIX')
+    parser.add_argument('--mode', type=str, default='app', choices=['app', 'train', 'backtest', 'fetch_data'],
+                       help='Mode to run the application in')
+    parser.add_argument('--trade_time', type=str, default='09:05',
+                       help='Time of day to trade (format: HH:MM)')
+    parser.add_argument('--episodes', type=int, default=10,
+                       help='Number of self-play episodes for training')
+    parser.add_argument('--batches', type=int, default=20,
+                       help='Number of training batches')
+    parser.add_argument('--days', type=int, default=30,
+                       help='Number of days to fetch data for')
     
-    while current_start < end_date:
-        # Use smaller chunks (5 days) to avoid data gaps
-        current_end = min(current_start + timedelta(days=5), end_date)
-        try:
-            ticker = yf.Ticker(ticker_symbol)
-            chunk = ticker.history(
-                start=current_start.strftime("%Y-%m-%d"),
-                end=current_end.strftime("%Y-%m-%d"),
-                interval="1m",
-                prepost=True  # Include pre and post market data
-            )
-            if not chunk.empty:
-                # Convert timezone to IST for both indices
-                chunk.index = chunk.index.tz_convert('Asia/Kolkata')
-                chunks.append(chunk)
-        except Exception as e:
-            print(f"Error fetching data for {ticker_symbol} from {current_start} to {current_end}: {e}")
+    args = parser.parse_args()
+    
+    if args.mode == 'fetch_data':
+        # Fetch new data only
+        print(f"Fetching {args.days} days of data...")
+        end_date = datetime.now(ZoneInfo("Asia/Kolkata"))
+        start_date = end_date - timedelta(days=args.days)
         
-        current_start = current_end
+        nifty_df, vix_df = fetch_new_data(start_date, end_date)
+        if nifty_df is not None and vix_df is not None:
+            save_to_csv(nifty_df, vix_df)
+            print("Data fetched and saved successfully")
+        else:
+            print("Error fetching data")
     
-    if not chunks:
-        raise ValueError(f"No data retrieved for {ticker_symbol}")
+    elif args.mode == 'train':
+        # Train the model
+        print("Loading data and initializing model...")
+        nifty_df, vix_df = get_latest_data(load_from_disk=True, fetch_days=args.days)
         
-    return pd.concat(chunks).sort_index().drop_duplicates()
-
-try:
-    # Get NIFTY data
-    print(f"Fetching NIFTY data from {start_date.date()} to {end_date.date()}")
-    nifty_df = get_chunked_data("^NSEI")
-    nifty_df.to_csv('nifty_1min_data.csv')
+        if nifty_df is None or vix_df is None:
+            print("Error loading data")
+            return
+        
+        # Initialize trader
+        trader = AlphaZeroTrader(
+            nifty_data=nifty_df,
+            vix_data=vix_df,
+            features_extractor=extract_features,
+            input_shape=(1, 10),
+            trade_time=args.trade_time
+        )
+        
+        # Try to load existing model
+        trader.load_model()
+        
+        # Run self-play and training
+        print(f"Running {args.episodes} self-play episodes...")
+        trader.self_play(episodes=args.episodes)
+        
+        print(f"Training model with {args.batches} batches...")
+        trader.train(num_batches=args.batches)
+        
+        # Save model
+        trader.save_model()
+        print("Model trained and saved successfully")
     
-    # Get India VIX data
-    print(f"Fetching India VIX data from {start_date.date()} to {end_date.date()}")
-    vix_df = get_chunked_data("^INDIAVIX")
-    vix_df.to_csv('vix_1min_data.csv')
+    elif args.mode == 'backtest':
+        # Run backtest
+        print("Loading data and initializing model...")
+        nifty_df, vix_df = get_latest_data(load_from_disk=True, fetch_days=args.days)
+        
+        if nifty_df is None or vix_df is None:
+            print("Error loading data")
+            return
+        
+        # Initialize trader
+        trader = AlphaZeroTrader(
+            nifty_data=nifty_df,
+            vix_data=vix_df,
+            features_extractor=extract_features,
+            input_shape=(1, 10),
+            trade_time=args.trade_time
+        )
+        
+        # Try to load existing model
+        if not trader.load_model():
+            print("Error loading model. Please train a model first.")
+            return
+        
+        # Run backtest
+        print("Running backtest...")
+        results_df = trader.backtest(use_mcts=False)
+        
+        if results_df is not None and len(results_df) > 0:
+            # Save backtest results
+            results_path = os.path.join('data', f'backtest_results_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv')
+            results_df.to_csv(results_path)
+            print(f"Backtest results saved to {results_path}")
     
-    print(f"Data saved successfully")
-    print(f"NIFTY records: {len(nifty_df)}")
-    print(f"India VIX records: {len(vix_df)}")
+    elif args.mode == 'app':
+        # Run the Streamlit app
+        print("Starting Streamlit app...")
+        streamlit_path = os.path.join('app', 'app.py')
+        subprocess.run([sys.executable, '-m', 'streamlit', 'run', streamlit_path])
 
-except Exception as e:
-    print(f"An error occurred: {e}")
+if __name__ == "__main__":
+    main()
