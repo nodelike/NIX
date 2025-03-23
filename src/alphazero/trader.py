@@ -203,7 +203,7 @@ class AlphaZeroTrader:
                         episode_reward += reward
                         
                         # Update state
-                state = next_state
+                        state = next_state
                         
                         # Track capital changes if available in info
                         if info and 'capital' in info:
@@ -211,11 +211,11 @@ class AlphaZeroTrader:
                 
                         # Update progress
                         if callback:
-                    callback({
-                        'episode': episode + 1,
-                        'step': step,
+                            callback({
+                                'episode': episode + 1,
+                                'step': step,
                                 'action': action_name,
-                        'reward': reward,
+                                'reward': reward,
                                 'total_reward': episode_reward
                             })
                         
