@@ -81,6 +81,16 @@ The project is organized into the following components:
 - **app**: Web application
   - `app.py`: Streamlit dashboard
 
+- **data**: Storage for market data
+  - CSV files for NIFTY and VIX data
+
+- **models**: Saved model files
+
+- **analysis**: Data analysis and visualization
+  - Jupyter notebooks
+  - Analysis scripts
+  - Visualization plots
+
 ## Trading Strategy
 
 The system learns to make trading decisions (buy, sell, or hold) for the NIFTY index at 9:05 AM every day. It uses the following approach:
