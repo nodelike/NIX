@@ -118,7 +118,7 @@ class AlphaZeroTrader:
                         if model_shape[1:] != features_shape[1:]:
                             print(f"Shape mismatch detected: Model expects {model_shape}, features are {features_shape}")
                             # Reinitialize model with correct shape
-                            self.model = AlphaZeroModel(features_shape, num_actions=self.n_actions)
+                            self.model = AlphaZeroModel(features_shape, n_actions=self.n_actions)
                             print(f"Model reinitialized with shape {features_shape}")
         except Exception as e:
             print(f"Error checking shape consistency: {e}")
@@ -310,10 +310,10 @@ class AlphaZeroTrader:
         
         try:
             # Train for specified number of batches
-        for i in range(num_batches):
+            for i in range(num_batches):
                 # Sample batch from replay buffer
-            states, policies, values = self.replay_buffer.sample(batch_size)
-            
+                states, policies, values = self.replay_buffer.sample(batch_size)
+                
                 if not states:
                     print("Error: Failed to sample from replay buffer")
                     break
@@ -351,16 +351,16 @@ class AlphaZeroTrader:
                         print(f"Batch {i+1}/{num_batches}: policy_loss={policy_loss:.4f}, value_loss={value_loss:.4f}, total_loss={total_loss:.4f}")
                     
                     # Update callback if provided
-            if callback:
-                callback({
-                    'batch': i + 1,
-                    'total_batches': num_batches,
-                    'policy_loss': policy_loss,
-                    'value_loss': value_loss,
-                    'total_loss': total_loss,
-                    'progress': (i + 1) / num_batches
-                })
-        
+                    if callback:
+                        callback({
+                            'batch': i + 1,
+                            'total_batches': num_batches,
+                            'policy_loss': policy_loss,
+                            'value_loss': value_loss,
+                            'total_loss': total_loss,
+                            'progress': (i + 1) / num_batches
+                        })
+                
                 except Exception as train_error:
                     print(f"Error in batch {i+1}: {train_error}")
                     import traceback
@@ -451,7 +451,7 @@ class AlphaZeroTrader:
                         self.input_shape = (1, 1, sample_features.size)
                 
                 print(f"Using input shape: {self.input_shape}")
-                self.model = AlphaZeroModel(self.input_shape, num_actions=self.n_actions)
+                self.model = AlphaZeroModel(self.input_shape, n_actions=self.n_actions)
                 
                 # Save the newly initialized model
                 os.makedirs(self.model_dir, exist_ok=True)
@@ -479,7 +479,7 @@ class AlphaZeroTrader:
             
             try:
                 # Initialize a new model as fallback
-                self.model = AlphaZeroModel(self.input_shape, num_actions=self.n_actions)
+                self.model = AlphaZeroModel(self.input_shape, n_actions=self.n_actions)
                 return False
             except Exception as e2:
                 print(f"Error initializing fallback model: {e2}")
@@ -516,8 +516,8 @@ class AlphaZeroTrader:
                     print(f"Error in MCTS prediction: {mcts_error}")
                     # Fall back to direct model prediction
                     policy, value = self.model.predict(state)
-            action = np.argmax(policy)
-        else:
+                    action = np.argmax(policy)
+            else:
                 # Use direct model prediction (faster but less accurate)
                 policy, value = self.model.predict(state)
                 action = np.argmax(policy)
@@ -534,14 +534,14 @@ class AlphaZeroTrader:
                 'value': float(value)
             }
             
-            except Exception as e:
+        except Exception as e:
             print(f"Error making prediction: {e}")
             import traceback
             traceback.print_exc()
             
             # Fall back to random action
             action = np.random.randint(0, self.n_actions)
-        return {
+            return {
                 'action': action,
                 'action_name': self.env.actions[action] if self.env else f"action_{action}",
                 'confidence': 1.0 / self.n_actions,
@@ -584,7 +584,7 @@ class AlphaZeroTrader:
             filtered_indices = []
             for i, feature in enumerate(self.env.features_list):
                 if 'timestamp' not in feature:
-                continue
+                    continue
                 
                 feature_date = feature['timestamp']
                 # Ensure timezone consistency

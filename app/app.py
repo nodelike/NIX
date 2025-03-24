@@ -7,6 +7,7 @@ import streamlit as st
 import matplotlib.pyplot as plt
 import seaborn as sns
 import plotly.graph_objects as go
+import plotly.express as px
 from datetime import datetime, timedelta
 from PIL import Image
 from io import BytesIO
@@ -82,7 +83,7 @@ def training_callback(info):
         if 'episode_complete' in info and info['episode_complete']:
             # Add reward info
             if 'total_reward' in info:
-            st.session_state.training_history['rewards'].append(info['total_reward'])
+                st.session_state.training_history['rewards'].append(info['total_reward'])
             
             # Add action distribution info
             if 'actions_count' in info:
@@ -197,10 +198,10 @@ def load_data_and_model():
         
         # Create a temporary environment to determine input shape
         from src.alphazero.environment import TradingEnvironment
-            temp_env = TradingEnvironment(
-                nifty_data=nifty_df,
-                vix_data=vix_df,
-                features_extractor=features_extractor,
+        temp_env = TradingEnvironment(
+            nifty_data=nifty_df,
+            vix_data=vix_df,
+            features_extractor=features_extractor,
             window_size=10,
             trade_time='9:15',
             test_mode=False
@@ -213,7 +214,7 @@ def load_data_and_model():
         if not temp_env.features_list:
             st.warning("No features extracted from data. Using default shape.")
             input_shape = (1, 1, 19)
-            else:
+        else:
             test_state = temp_env.get_state(0)
             if test_state is not None:
                 input_shape = test_state.shape
@@ -223,34 +224,41 @@ def load_data_and_model():
             
         # Initialize the trader
         from src.alphazero.trader import AlphaZeroTrader
-            trader = AlphaZeroTrader(
-                input_shape=input_shape,
+        trader = AlphaZeroTrader(
+            input_shape=input_shape,
             n_actions=3,
             features_extractor=features_extractor
         )
         
-        # Load the model
-        model_loaded = trader.load_model('alphazero_model.h5')
-        if not model_loaded:
-            st.warning("Could not load model. Will try to initialize a new one.")
-        
-        # Make sure trader has an environment
-        trader.env = TradingEnvironment(
+        try:
+            # Load the model
+            model_loaded = trader.load_model('alphazero_model.h5')
+            if not model_loaded:
+                st.warning("Could not load model. Will try to initialize a new one.")
+            
+            # Make sure trader has an environment
+            trader.env = TradingEnvironment(
                 nifty_data=nifty_df,
                 vix_data=vix_df,
-            features_extractor=features_extractor,
-            window_size=10,
-            trade_time='9:15',
-            lot_size=int(st.session_state.get('lot_size', 50)),
-            initial_capital=int(st.session_state.get('initial_capital', 100000)),
-            test_mode=False
-        )
-        
-        # Make sure the environment is properly initialized
-        if not trader.env.features_list:
-            trader.env._prepare_data()
+                features_extractor=features_extractor,
+                window_size=10,
+                trade_time='9:15',
+                lot_size=int(st.session_state.get('lot_size', 50)),
+                initial_capital=int(st.session_state.get('initial_capital', 100000)),
+                test_mode=False
+            )
             
+            # Make sure the environment is properly initialized
+            if not trader.env.features_list:
+                trader.env._prepare_data()
+                
             return trader, nifty_df, vix_df
+            
+        except Exception as e:
+            st.error(f"Error loading data and model: {e}")
+            import traceback
+            traceback.print_exc()
+            return None, None, None
     
     except Exception as e:
         st.error(f"Error loading data and model: {e}")
@@ -267,7 +275,7 @@ def plot_training_history():
     # Create figure
     fig = plt.figure(figsize=(12, 10))
     
-        # Plot rewards
+    # Plot rewards
     if 'rewards' in st.session_state.training_history and len(st.session_state.training_history['rewards']) > 0:
         ax1 = fig.add_subplot(2, 2, 1)
         rewards = st.session_state.training_history['rewards']
@@ -277,7 +285,7 @@ def plot_training_history():
         ax1.set_ylabel('Total Reward')
         ax1.grid(True)
     
-        # Plot action distribution
+    # Plot action distribution
     if 'actions' in st.session_state.training_history and len(st.session_state.training_history['actions']) > 0:
         ax2 = fig.add_subplot(2, 2, 2)
         actions = st.session_state.training_history['actions']
@@ -355,275 +363,111 @@ def plot_backtest_results():
         st.info("No backtest results available. Run a backtest first.")
         return
     
-    results_df = st.session_state.backtest_results['results_df']
-    metrics = st.session_state.backtest_results['metrics']
+    try:
+        # Get data from session state
+        if 'results_df' not in st.session_state.backtest_results or 'metrics' not in st.session_state.backtest_results:
+            st.warning("Incomplete backtest results found.")
+            return
     
-    # Display metrics
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Total Return", f"{metrics['total_return']:.2%}")
-    col2.metric("Sharpe Ratio", f"{metrics['sharpe_ratio']:.2f}")
-    col3.metric("Max Drawdown", f"{metrics['max_drawdown']:.2%}")
-    col4.metric("Total Trades", metrics['total_trades'])
-    
-    # Create backtest chart
-    fig = go.Figure()
-    
-    # Add equity curve
-    fig.add_trace(
-        go.Scatter(
-            x=results_df['date'],
-            y=results_df['capital'],
-            mode='lines',
-            name='Capital',
-            line=dict(color='blue')
-        )
-    )
-    
-    # Prepare trade annotations
-    annotations = []
-    
-    # Process trades to identify entry and exit points
-    trades = []
-    current_trade = None
-    
-    for i, row in results_df.iterrows():
-        if row['action'] == 'buy' and (current_trade is None or current_trade['type'] != 'long'):
-            # Close any existing trade
-            if current_trade is not None:
-                current_trade['exit_date'] = row['date']
-                current_trade['exit_price'] = row['price']
-                current_trade['exit_capital'] = row['capital']
-                current_trade['exit_reason'] = 'New Position'
-                trades.append(current_trade)
-            
-            # Start new long trade
-            current_trade = {
-                'type': 'long',
-                'entry_date': row['date'],
-                'entry_price': row['price'],
-                'entry_capital': row['capital'],
-                'stop_loss': row['price'] * 0.99,  # 1% stop loss
-                'take_profit': row['price'] * 1.02  # 2% take profit
-            }
-            
-        elif row['action'] == 'sell' and (current_trade is None or current_trade['type'] != 'short'):
-            # Close any existing trade
-            if current_trade is not None:
-                current_trade['exit_date'] = row['date']
-                current_trade['exit_price'] = row['price']
-                current_trade['exit_capital'] = row['capital']
-                current_trade['exit_reason'] = 'New Position'
-                trades.append(current_trade)
-            
-            # Start new short trade
-            current_trade = {
-                'type': 'short',
-                'entry_date': row['date'],
-                'entry_price': row['price'],
-                'entry_capital': row['capital'],
-                'stop_loss': row['price'] * 1.01,  # 1% stop loss for short
-                'take_profit': row['price'] * 0.98  # 2% take profit for short
-            }
-            
-        elif row['action'] == 'hold' and current_trade is not None and row['position'] == 0:
-            # Position closed on hold action
-            current_trade['exit_date'] = row['date']
-            current_trade['exit_price'] = row['price']
-            current_trade['exit_capital'] = row['capital']
-            
-            # Determine exit reason (stop loss or take profit)
-            if current_trade['type'] == 'long':
-                if row['price'] <= current_trade['stop_loss']:
-                    current_trade['exit_reason'] = 'Stop Loss'
-                elif row['price'] >= current_trade['take_profit']:
-                    current_trade['exit_reason'] = 'Take Profit'
-                else:
-                    current_trade['exit_reason'] = 'Manual Exit'
-            else:  # short
-                if row['price'] >= current_trade['stop_loss']:
-                    current_trade['exit_reason'] = 'Stop Loss'
-                elif row['price'] <= current_trade['take_profit']:
-                    current_trade['exit_reason'] = 'Take Profit'
-                else:
-                    current_trade['exit_reason'] = 'Manual Exit'
-            
-            trades.append(current_trade)
-            current_trade = None
-    
-    # Close any open trade at the end
-    if current_trade is not None:
-        current_trade['exit_date'] = results_df['date'].iloc[-1]
-        current_trade['exit_price'] = results_df['price'].iloc[-1]
-        current_trade['exit_capital'] = results_df['capital'].iloc[-1]
-        current_trade['exit_reason'] = 'End of Backtest'
-        trades.append(current_trade)
-    
-    # Add trade markers and annotations
-    for trade in trades:
-        # Entry markers
-        marker_color = 'green' if trade['type'] == 'long' else 'red'
-        marker_symbol = 'triangle-up' if trade['type'] == 'long' else 'triangle-down'
+        results_df = st.session_state.backtest_results['results_df']
+        metrics = st.session_state.backtest_results['metrics']
         
-        # Add entry point
-        fig.add_trace(
-            go.Scatter(
-                x=[trade['entry_date']],
-                y=[trade['entry_capital']],
-                mode='markers',
-                name=f"{trade['type'].capitalize()} Entry",
-                marker=dict(color=marker_color, size=12, symbol=marker_symbol),
-                showlegend=False
+        # Display metrics
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Total Return", f"{metrics['total_return']:.2%}")
+        col2.metric("Sharpe Ratio", f"{metrics['sharpe_ratio']:.2f}")
+        col3.metric("Max Drawdown", f"{metrics['max_drawdown']:.2%}")
+        col4.metric("Total Trades", metrics['total_trades'])
+        
+        # Create backtest chart
+        fig = go.Figure()
+        
+        # Check if 'capital' is in the DataFrame
+        if 'capital' in results_df.columns:
+            # Add equity curve
+            fig.add_trace(
+                go.Scatter(
+                    x=results_df['date'],
+                    y=results_df['capital'],
+                    mode='lines',
+                    name='Capital',
+                    line=dict(color='blue')
+                )
             )
-        )
-        
-        # Add stop loss and take profit lines for the trade duration
-        dates_in_trade = pd.date_range(start=trade['entry_date'], end=trade['exit_date'], freq='D')
-        
-        # Stop loss line
-        fig.add_trace(
-            go.Scatter(
-                x=dates_in_trade,
-                y=[trade['stop_loss']] * len(dates_in_trade),
-                mode='lines',
-                line=dict(color='red', width=1, dash='dot'),
-                name='Stop Loss',
-                showlegend=False,
-                yaxis='y2'
-            )
-        )
-        
-        # Take profit line
-        fig.add_trace(
-            go.Scatter(
-                x=dates_in_trade,
-                y=[trade['take_profit']] * len(dates_in_trade),
-                mode='lines',
-                line=dict(color='green', width=1, dash='dot'),
-                name='Take Profit',
-                showlegend=False,
-                yaxis='y2'
-            )
-        )
-        
-        # Add exit point with different marker based on reason
-        exit_marker_color = 'red'
-        exit_marker_symbol = 'x'
-        
-        if trade['exit_reason'] == 'Take Profit':
-            exit_marker_color = 'green'
-            exit_marker_symbol = 'star'
-        elif trade['exit_reason'] == 'Stop Loss':
-            exit_marker_color = 'red'
-            exit_marker_symbol = 'x-open'
-        elif trade['exit_reason'] == 'New Position':
-            exit_marker_color = 'blue'
-            exit_marker_symbol = 'circle'
-        
-        fig.add_trace(
-            go.Scatter(
-                x=[trade['exit_date']],
-                y=[trade['exit_capital']],
-                mode='markers',
-                name=f"Exit ({trade['exit_reason']})",
-                marker=dict(color=exit_marker_color, size=10, symbol=exit_marker_symbol),
-                showlegend=False
-            )
-        )
-        
-        # Add annotation for the trade result
-        pnl = (trade['exit_capital'] - trade['entry_capital']) / trade['entry_capital']
-        annotations.append(dict(
-            x=trade['exit_date'],
-            y=trade['exit_capital'],
-            text=f"{pnl:.2%}",
-            showarrow=True,
-            arrowhead=2,
-            arrowsize=1,
-            arrowwidth=1,
-            arrowcolor=exit_marker_color,
-            font=dict(
-                size=10,
-                color=exit_marker_color
-            ),
-            align="center"
-        ))
-    
-    # Add NIFTY price on secondary axis
-    fig.add_trace(
-        go.Scatter(
-            x=results_df['date'],
-            y=results_df['price'],
-            mode='lines',
-            name='NIFTY',
-            line=dict(color='gray', width=1),
-            yaxis='y2'
-        )
-    )
-    
-    # Update layout with second y-axis and annotations
-    fig.update_layout(
-        title='Backtest Results with Trade Analysis',
-        xaxis=dict(title='Date'),
-        yaxis=dict(title='Capital (₹)', side='left'),
-        yaxis2=dict(title='NIFTY', overlaying='y', side='right'),
-        legend=dict(x=0, y=1, orientation='h'),
-        height=600,
-        annotations=annotations
-    )
-    
-    st.plotly_chart(fig, use_container_width=True)
-    
-    # Display trade statistics
-    st.subheader("Trade Statistics")
-    
-    # Convert trades to DataFrame for easier analysis
-    if trades:
-        trades_df = pd.DataFrame(trades)
-        
-        # Calculate trade results
-        trades_df['pnl_pct'] = (trades_df['exit_capital'] - trades_df['entry_capital']) / trades_df['entry_capital']
-        trades_df['duration'] = (trades_df['exit_date'] - trades_df['entry_date']).dt.days
-        
-        # Count by trade type and exit reason
-        st.write("Trade Types")
-        trade_types = trades_df.groupby('type').size().reset_index(name='count')
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.write(trade_types)
             
-            # Winning ratio
-            winning_trades = len(trades_df[trades_df['pnl_pct'] > 0])
-            total_trades = len(trades_df)
-            if total_trades > 0:
-                win_ratio = winning_trades / total_trades
-                st.metric("Win Ratio", f"{win_ratio:.2%}")
-        
-        with col2:
-            # Exit reasons
-            exit_reasons = trades_df.groupby('exit_reason').size().reset_index(name='count')
-            st.write(exit_reasons)
+            # Add price chart on secondary axis if available
+            if 'price' in results_df.columns:
+                fig.add_trace(
+                    go.Scatter(
+                        x=results_df['date'],
+                        y=results_df['price'],
+                        mode='lines',
+                        name='NIFTY',
+                        line=dict(color='gray', width=1),
+                        yaxis='y2'
+                    )
+                )
             
-            # Average PnL
-            avg_pnl = trades_df['pnl_pct'].mean()
-            st.metric("Average PnL", f"{avg_pnl:.2%}")
-        
-        # Trade duration statistics
-        st.write("Trade Duration Statistics")
-        st.write(trades_df['duration'].describe().reset_index().rename(columns={'index': 'Statistic', 0: 'Value'}))
-    
-    # Display trade distribution
-    action_counts = results_df['action'].value_counts()
-    fig_actions = px.pie(
-        values=action_counts.values,
-        names=action_counts.index,
-        title="Trading Action Distribution"
-    )
-    st.plotly_chart(fig_actions, use_container_width=True)
-    
-    # Display results table
-    st.subheader("Detailed Results")
-    st.dataframe(results_df)
+            # Update layout with second y-axis
+            fig.update_layout(
+                title='Backtest Results',
+                xaxis=dict(title='Date'),
+                yaxis=dict(title='Capital (₹)', side='left'),
+                yaxis2=dict(title='NIFTY', overlaying='y', side='right'),
+                legend=dict(x=0, y=1, orientation='h'),
+                height=600
+            )
+            
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # Display trade history if available
+            if 'trade_history' in st.session_state.backtest_results and st.session_state.backtest_results['trade_history']:
+                trades = st.session_state.backtest_results['trade_history']
+                trades_df = pd.DataFrame(trades)
+                
+                # Display trade statistics
+                st.subheader("Trade Statistics")
+                
+                # Create simple trade dashboard
+                if len(trades_df) > 0:
+                    # Calculate trade results if necessary fields exist
+                    if all(col in trades_df.columns for col in ['action', 'date', 'price']):
+                        # Track actions distribution
+                        action_counts = trades_df['action'].value_counts()
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            # Display action distribution pie chart
+                            fig_actions = px.pie(
+                                values=action_counts.values,
+                                names=action_counts.index,
+                                title="Trading Action Distribution"
+                            )
+                            st.plotly_chart(fig_actions, use_container_width=True)
+                        
+                        with col2:
+                            # Calculate basic stats if capital column exists
+                            if 'return' in trades_df.columns:
+                                winning_trades = len(trades_df[trades_df['return'] > 0])
+                                total_trades = len(trades_df)
+                                win_ratio = winning_trades / total_trades if total_trades > 0 else 0
+                                avg_return = trades_df['return'].mean() if 'return' in trades_df.columns else 0
+                                
+                                st.metric("Win Ratio", f"{win_ratio:.2%}")
+                                st.metric("Average Return", f"{avg_return:.2%}")
+                    
+                    # Display the trade table
+                    st.subheader("Trade Details")
+                    st.dataframe(trades_df)
+            else:
+                st.info("No detailed trade history available in the backtest results.")
+        else:
+            st.warning("No capital data available in backtest results.")
+            return
+    except Exception as e:
+        st.error(f"Error displaying backtest results: {e}")
+        import traceback
+        st.code(traceback.format_exc(), language="python")
 
 # Sidebar for navigation
 def sidebar():
@@ -631,7 +475,7 @@ def sidebar():
     with st.sidebar:
         st.title("AlphaZero Trader")
     
-    # Navigation
+        # Navigation
         page = st.radio("Navigation", [
             "Dashboard", 
             "Training",
@@ -696,10 +540,10 @@ def sidebar():
         # Refresh data button
         if st.button("Refresh Data"):
             # Clear session state to reload everything
-        st.session_state.trader = None
-        st.session_state.nifty_data = None
-        st.session_state.vix_data = None
-        st.rerun()
+            st.session_state.trader = None
+            st.session_state.nifty_data = None
+            st.session_state.vix_data = None
+            st.rerun()
     
         # Footer
         st.markdown("---")
@@ -718,7 +562,7 @@ def dashboard_page():
        'nifty_data' not in st.session_state or st.session_state.nifty_data is None:
         try:
             with st.spinner("Loading data and model..."):
-            trader, nifty_df, vix_df = load_data_and_model()
+                trader, nifty_df, vix_df = load_data_and_model()
                 st.session_state.trader = trader
                 st.session_state.nifty_data = nifty_df
                 st.session_state.vix_data = vix_df
@@ -812,17 +656,9 @@ def dashboard_page():
                     return
                 
                 # Make sure the environment is properly initialized
-                trader.env = TradingEnvironment(
-                    nifty_data=nifty_df,
-                    vix_data=vix_df,
-                    features_extractor=trader.features_extractor,
-                    window_size=10,
-                    trade_time=st.session_state.trade_time,
-                    lot_size=st.session_state.lot_size,
-                    initial_capital=st.session_state.initial_capital,
-                    test_mode=False
-                )
-                
+                if not trader.env.features_list:
+                    trader.env._prepare_data()
+                    
                 # Make sure environment is reset and features are processed
                 try:
                     trader.env.reset()
@@ -834,61 +670,61 @@ def dashboard_page():
                         st.error("Failed to extract features from data.")
                         return
                         
-            state = trader.env.get_state(len(trader.env.features_list) - 1)
+                    state = trader.env.get_state(len(trader.env.features_list) - 1)
                     if state is None:
                         st.error("Failed to get state from environment.")
                         return
                         
                     prediction = trader.predict(state, use_mcts=True)
+                    
+                    # Convert action to text
+                    action_map = {0: "BUY", 1: "SELL", 2: "HOLD"}
+                    action_text = action_map.get(prediction['action'], "UNKNOWN")
+                    
+                    # Set color based on action
+                    action_color = "green" if action_text == "BUY" else "red" if action_text == "SELL" else "gray"
+                    
+                    # Display prediction
+                    st.markdown(f"""
+                    <p style='font-size:24px; color:{action_color};'>{action_text}</p>
+                    <p>Confidence: {prediction['confidence']*100:.1f}%</p>
+                    """, unsafe_allow_html=True)
                 except Exception as e:
                     st.error(f"Error getting prediction: {e}")
                     import traceback
                     traceback.print_exc()
                     return
+            
+            # Simulate the action to get entry, stop loss, and take profit levels
+            if action_text != "HOLD":
+                # Run a test step to get the levels
+                test_env = TradingEnvironment(
+                    nifty_data=nifty_df, 
+                    vix_data=vix_df,
+                    features_extractor=trader.features_extractor,
+                    trade_time=st.session_state.trade_time,
+                    lot_size=st.session_state.lot_size,
+                    initial_capital=st.session_state.initial_capital,
+                    test_mode=False
+                )
+                test_env.reset()
+                # Move to last state
+                test_env.current_idx = len(test_env.features_list) - 1
+                # Take action
+                _, _, _, info = test_env.step(prediction['action'])
                 
-                # Convert action to text
-                action_map = {0: "BUY", 1: "SELL", 2: "HOLD"}
-                action_text = action_map.get(prediction['action'], "UNKNOWN")
+                # Extract trade info
+                if 'entry_price' in info:
+                    st.markdown(f"**Entry Price:** {info['entry_price']:.2f}")
+                if 'stop_loss' in info:
+                    sl_pct = abs(info['stop_loss'] / info['entry_price'] - 1) * 100
+                    st.markdown(f"**Stop Loss:** {info['stop_loss']:.2f} ({sl_pct:.1f}%)")
+                if 'take_profit' in info:
+                    tp_pct = abs(info['take_profit'] / info['entry_price'] - 1) * 100
+                    st.markdown(f"**Take Profit:** {info['take_profit']:.2f} ({tp_pct:.1f}%)")
                 
-                # Set color based on action
-                action_color = "green" if action_text == "BUY" else "red" if action_text == "SELL" else "gray"
-                
-                # Display prediction
-                st.markdown(f"""
-                <p style='font-size:24px; color:{action_color};'>{action_text}</p>
-                <p>Confidence: {prediction['confidence']*100:.1f}%</p>
-            """, unsafe_allow_html=True)
-    
-                # Simulate the action to get entry, stop loss, and take profit levels
-                if action_text != "HOLD":
-                    # Run a test step to get the levels
-                    test_env = TradingEnvironment(
-                        nifty_data=nifty_df, 
-                        vix_data=vix_df,
-                        features_extractor=trader.features_extractor,
-                        trade_time=st.session_state.trade_time,
-                        lot_size=st.session_state.lot_size,
-                        initial_capital=st.session_state.initial_capital,
-                        test_mode=False
-                    )
-                    test_env.reset()
-                    # Move to last state
-                    test_env.current_idx = len(test_env.features_list) - 1
-                    # Take action
-                    _, _, _, info = test_env.step(prediction['action'])
-                    
-                    # Extract trade info
-                    if 'entry_price' in info:
-                        st.markdown(f"**Entry Price:** {info['entry_price']:.2f}")
-                    if 'stop_loss' in info:
-                        sl_pct = abs(info['stop_loss'] / info['entry_price'] - 1) * 100
-                        st.markdown(f"**Stop Loss:** {info['stop_loss']:.2f} ({sl_pct:.1f}%)")
-                    if 'take_profit' in info:
-                        tp_pct = abs(info['take_profit'] / info['entry_price'] - 1) * 100
-                        st.markdown(f"**Take Profit:** {info['take_profit']:.2f} ({tp_pct:.1f}%)")
-                    
-                    # Show lot size
-                    st.markdown(f"**Lot Size:** {test_env.lot_size} shares")
+                # Show lot size
+                st.markdown(f"**Lot Size:** {test_env.lot_size} shares")
         except Exception as e:
             st.error(f"Error getting prediction: {e}")
             import traceback
@@ -1378,7 +1214,7 @@ def training_page():
        'vix_data' not in st.session_state or st.session_state.vix_data is None:
         try:
             with st.spinner("Loading data..."):
-            trader, nifty_df, vix_df = load_data_and_model()
+                trader, nifty_df, vix_df = load_data_and_model()
                 st.session_state.nifty_data = nifty_df
                 st.session_state.vix_data = vix_df
                 if trader is not None:
@@ -1489,7 +1325,7 @@ def training_page():
                     else:
                         st.error("Training failed. Check the logs for details.")
                         
-        except Exception as e:
+                except Exception as e:
                     st.error(f"Error during training: {e}")
                     st.info("You can try running the standalone training script with: `python train_standalone.py`")
                     import traceback
@@ -1549,7 +1385,7 @@ def backtesting_page():
        'nifty_data' not in st.session_state or st.session_state.nifty_data is None:
         try:
             with st.spinner("Loading data and model..."):
-            trader, nifty_df, vix_df = load_data_and_model()
+                trader, nifty_df, vix_df = load_data_and_model()
                 st.session_state.trader = trader
                 st.session_state.nifty_data = nifty_df
                 st.session_state.vix_data = vix_df
@@ -1561,7 +1397,7 @@ def backtesting_page():
         trader = st.session_state.trader
         nifty_df = st.session_state.nifty_data
         vix_df = st.session_state.vix_data
-        
+    
     # Backtest parameters
     st.subheader("Backtest Parameters")
     
@@ -1613,9 +1449,6 @@ def backtesting_page():
                 progress_bar = st.progress(0)
                 status_text = st.empty()
                 
-                # Create a container for backtest results
-                results_container = st.container()
-                
                 # Convert start_date and end_date to timezone-aware datetime objects
                 try:
                     # Convert to timezone-aware timestamps with Asia/Kolkata timezone
@@ -1636,13 +1469,13 @@ def backtesting_page():
                     # Show backtest summary
                     st.subheader("Backtest Results")
                     
-        col1, col2 = st.columns(2)
-        with col1:
+                    col1, col2 = st.columns(2)
+                    with col1:
                         st.metric("Total Trades", results.get('total_trades', 0))
                         st.metric("Win Rate", f"{results.get('win_rate', 0):.2%}")
                         st.metric("Total Return", f"{results.get('total_return', 0):.2%}")
                     
-        with col2:
+                    with col2:
                         st.metric("Profitable Trades", results.get('profitable_trades', 0))
                         st.metric("Max Drawdown", f"{results.get('max_drawdown', 0):.2%}")
                         st.metric("Final Capital", f"₹{results.get('final_capital', 0):,.2f}")
@@ -1659,67 +1492,6 @@ def backtesting_page():
                 else:
                     st.error("Backtest failed to produce results.")
                 
-                if hasattr(trader.env, 'trade_history') and trader.env.trade_history:
-                    trade_history = trader.env.trade_history
-                    trade_df = pd.DataFrame(trade_history)
-                    
-                    # Calculate performance metrics
-                    total_trades = len(trade_df)
-                    if 'return' in trade_df.columns:
-                        profitable_trades = len(trade_df[trade_df['return'] > 0])
-                        win_rate = profitable_trades / total_trades * 100 if total_trades > 0 else 0
-                        total_return = trade_df['return'].sum()
-                        
-                        # Calculate drawdown if capital column exists
-                        if 'capital' in trade_df.columns:
-                            capital_series = trade_df['capital']
-                            cummax = capital_series.cummax()
-                            drawdown = (capital_series - cummax) / cummax * 100
-                            max_drawdown = drawdown.min()
-            else:
-                            max_drawdown = 0
-    
-                        # Display performance metrics
-                        with results_container:
-    st.subheader("Backtest Results")
-                            col1, col2, col3, col4 = st.columns(4)
-                            with col1:
-                                st.metric("Total Trades", f"{total_trades}")
-                            with col2:
-                                st.metric("Win Rate", f"{win_rate:.1f}%")
-                            with col3:
-                                st.metric("Total Return", f"{total_return:.2f}%")
-                            with col4:
-                                st.metric("Max Drawdown", f"{max_drawdown:.2f}%")
-                            
-                            # Show capital growth chart
-                            if 'capital' in trade_df.columns:
-                                st.subheader("Capital Growth")
-                                fig = go.Figure()
-                                fig.add_trace(go.Scatter(
-                                    x=trade_df['date'],
-                                    y=trade_df['capital'],
-                                    mode='lines+markers',
-                                    name='Capital',
-                                    line=dict(color='green', width=2)
-                                ))
-                                fig.update_layout(
-                                    xaxis=dict(title='Date'),
-                                    yaxis=dict(title='Capital (₹)'),
-                                    height=400
-                                )
-                                st.plotly_chart(fig, use_container_width=True)
-                            
-                            # Show trades table
-                            st.subheader("Trades")
-                            st.dataframe(trade_df, use_container_width=True)
-                    else:
-                        st.warning("No return data available in trade history.")
-                else:
-                    st.warning("No trades were executed during the backtest period.")
-                
-                status_text.text("Backtest completed!")
-                
             except Exception as e:
                 st.error(f"Error during backtesting: {e}")
                 import traceback
@@ -1734,7 +1506,7 @@ def prediction_page():
        'nifty_data' not in st.session_state or st.session_state.nifty_data is None:
         try:
             with st.spinner("Loading data and model..."):
-            trader, nifty_df, vix_df = load_data_and_model()
+                trader, nifty_df, vix_df = load_data_and_model()
                 st.session_state.trader = trader
                 st.session_state.nifty_data = nifty_df
                 st.session_state.vix_data = vix_df
@@ -1910,6 +1682,26 @@ def settings_page():
 # Main function
 def main(backtest_results=None):
     """Main entry point for the Streamlit app"""
+    # Parse command line arguments for results file
+    import sys
+    import json
+    import os
+    
+    # Check if results file was passed as command line argument
+    results_file = None
+    if len(sys.argv) > 2 and sys.argv[1] == "--results_file":
+        results_file = sys.argv[2]
+        
+    # Load results from file if provided
+    if results_file and os.path.exists(results_file):
+        try:
+            with open(results_file, 'r') as f:
+                backtest_results = json.load(f)
+            # Remove the temp file after loading
+            os.remove(results_file)
+        except Exception as e:
+            st.error(f"Error loading backtest results: {e}")
+    
     # Initialize session state for navigation and data
     if 'trader' not in st.session_state:
         st.session_state.trader = None

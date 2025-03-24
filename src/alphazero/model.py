@@ -13,13 +13,14 @@ LR = 0.001  # Learning rate
 class AlphaZeroModel:
     """Neural network model for AlphaZero"""
     
-    def __init__(self, input_shape, n_actions=3, learning_rate=LR):
+    def __init__(self, input_shape, n_actions=3, num_actions=None, learning_rate=LR):
         """
         Initialize AlphaZero model
         
         Args:
             input_shape: Shape of the state input (can be 1D, 2D, or 3D)
             n_actions: Number of possible actions
+            num_actions: Alternative name for n_actions (for backward compatibility)
             learning_rate: Learning rate for the optimizer
         """
         # Ensure input_shape is a tuple
@@ -33,6 +34,10 @@ class AlphaZeroModel:
         if len(input_shape) == 1:
             # For 1D inputs, reshape to (1, n_features)
             input_shape = (1, input_shape[0])
+        
+        # Handle backward compatibility with num_actions parameter
+        if num_actions is not None:
+            n_actions = num_actions
         
         # Store model parameters
         self.input_shape = input_shape

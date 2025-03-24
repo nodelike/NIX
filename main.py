@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 import glob
 import numpy as np
+import json
 
 # Add the project path to the system path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -212,11 +213,37 @@ def launch_dashboard(backtest_results=None):
     try:
         print("Launching dashboard...")
         
-        # Import the dashboard app
-        from app.app import main as app_main
+        # Use streamlit run command instead of importing directly
+        import subprocess
+        import os
         
-        # Run the dashboard with backtest results if provided
-        app_main(backtest_results=backtest_results)
+        app_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "app", "app.py")
+        
+        # If we have backtest results, save them to a temporary file
+        results_file = None
+        if backtest_results is not None:
+            results_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "temp_results.json")
+            with open(results_file, 'w') as f:
+                json.dump(backtest_results, f)
+            
+            # Pass the file path as a parameter
+            cmd = ["streamlit", "run", app_path, "--", "--results_file", results_file]
+        else:
+            cmd = ["streamlit", "run", app_path]
+        
+        # Run the streamlit app in a subprocess
+        process = subprocess.Popen(cmd, 
+                                  stdout=subprocess.PIPE, 
+                                  stderr=subprocess.PIPE,
+                                  text=True)
+        
+        # Print the first few lines of output
+        for i, line in enumerate(process.stdout):
+            if i < 5:  # Just show first 5 lines
+                print(line.strip())
+            else:
+                break
+                
     except Exception as e:
         print(f"Error launching dashboard: {e}")
         import traceback
