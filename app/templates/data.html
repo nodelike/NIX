@@ -1,0 +1,309 @@
+{% extends "base.html" %}
+
+{% block title %}Data Management - AlphaZero Trader{% endblock %}
+
+{% block content %}
+    <h1 class="text-3xl font-bold mb-8">Data Management</h1>
+    
+    <!-- Tabs -->
+    <div class="mb-6">
+        <ul class="flex flex-wrap border-b border-gray-200">
+            <li class="mr-2">
+                <a href="#overview" class="data-tab inline-block py-2 px-4 border-b-2 {% if active_tab == 'overview' %}border-blue-600 text-blue-600{% else %}border-transparent hover:text-gray-600 hover:border-gray-300{% endif %}" data-target="overview-tab">
+                    Data Overview
+                </a>
+            </li>
+            <li class="mr-2">
+                <a href="#update" class="data-tab inline-block py-2 px-4 border-b-2 {% if active_tab == 'update' %}border-blue-600 text-blue-600{% else %}border-transparent hover:text-gray-600 hover:border-gray-300{% endif %}" data-target="update-tab">
+                    Update Data
+                </a>
+            </li>
+            <li class="mr-2">
+                <a href="#consolidate" class="data-tab inline-block py-2 px-4 border-b-2 {% if active_tab == 'consolidate' %}border-blue-600 text-blue-600{% else %}border-transparent hover:text-gray-600 hover:border-gray-300{% endif %}" data-target="consolidate-tab">
+                    Consolidate Files
+                </a>
+            </li>
+            <li class="mr-2">
+                <a href="#export-import" class="data-tab inline-block py-2 px-4 border-b-2 {% if active_tab == 'export-import' %}border-blue-600 text-blue-600{% else %}border-transparent hover:text-gray-600 hover:border-gray-300{% endif %}" data-target="export-import-tab">
+                    Export/Import
+                </a>
+            </li>
+        </ul>
+    </div>
+    
+    <!-- Tab Content -->
+    <!-- Overview Tab -->
+    <div id="overview-tab" class="tab-content {% if active_tab != 'overview' %}hidden{% endif %}">
+        <div class="bg-white p-6 rounded-lg shadow mb-8">
+            <h2 class="text-xl font-semibold mb-4">Current Data Status</h2>
+            
+            {% if data_summary.has_consolidated_files %}
+                <div class="mb-4 bg-green-100 border-l-4 border-green-500 text-green-700 p-4">
+                    ✅ Consolidated data files are available
+                </div>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                    <div class="bg-gray-50 p-4 rounded border">
+                        <h3 class="text-lg font-medium text-gray-800 mb-2">NIFTY Records</h3>
+                        <p class="text-2xl font-bold">{{ data_summary.nifty_records|default('0') }}</p>
+                        {% if data_summary.nifty_date_range %}
+                            <p class="text-sm text-gray-600 mt-2">
+                                Date Range: {{ data_summary.nifty_date_range[0].date() }} to {{ data_summary.nifty_date_range[1].date() }}
+                            </p>
+                        {% endif %}
+                    </div>
+                    
+                    <div class="bg-gray-50 p-4 rounded border">
+                        <h3 class="text-lg font-medium text-gray-800 mb-2">VIX Records</h3>
+                        <p class="text-2xl font-bold">{{ data_summary.vix_records|default('0') }}</p>
+                        {% if data_summary.vix_date_range %}
+                            <p class="text-sm text-gray-600 mt-2">
+                                Date Range: {{ data_summary.vix_date_range[0].date() }} to {{ data_summary.vix_date_range[1].date() }}
+                            </p>
+                        {% endif %}
+                    </div>
+                </div>
+                
+                <h3 class="text-lg font-medium mb-3">Data Coverage Timeline</h3>
+                <div class="bg-gray-50 p-4 rounded border mb-6">
+                    <div id="timeline-chart" class="h-32"></div>
+                </div>
+            {% else %}
+                <div class="mb-4 bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4">
+                    ⚠️ No consolidated data files found. Use the 'Consolidate Files' tab to create them.
+                </div>
+            {% endif %}
+            
+            <h3 class="text-lg font-medium mb-3">Other Data Files</h3>
+            {% if data_summary.other_files %}
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Filename</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Size</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Modified</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200">
+                            {% for file in data_summary.other_files %}
+                                <tr>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ file.name }}</td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ (file.size / 1024)|round(1) }} KB</td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ file.modified.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <p class="text-gray-500">No additional data files found.</p>
+            {% endif %}
+        </div>
+    </div>
+    
+    <!-- Update Data Tab -->
+    <div id="update-tab" class="tab-content {% if active_tab != 'update' %}hidden{% endif %}">
+        <div class="bg-white p-6 rounded-lg shadow mb-8">
+            <h2 class="text-xl font-semibold mb-4">Update Data</h2>
+            
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
+                <div class="md:col-span-1">
+                    <form action="{{ url_for('data.update') }}" method="post">
+                        <div class="mb-4">
+                            <label for="days" class="block text-sm font-medium text-gray-700 mb-1">Days to fetch</label>
+                            <input type="number" id="days" name="days" min="1" max="60" value="30"
+                                   class="border rounded-md px-3 py-2 w-full">
+                            <p class="text-xs text-gray-500 mt-1">Number of days to fetch from Yahoo Finance</p>
+                        </div>
+                        
+                        <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md">
+                            Fetch & Update Data
+                        </button>
+                    </form>
+                </div>
+                
+                <div class="md:col-span-3 bg-blue-50 p-4 rounded-lg">
+                    <h3 class="text-lg font-medium text-blue-800 mb-2">How This Works</h3>
+                    <p class="text-sm text-blue-700 mb-2">
+                        This will fetch the most recent data and merge it with your existing data.
+                    </p>
+                    <ul class="list-disc pl-5 text-sm text-blue-700">
+                        <li>Load your existing consolidated data</li>
+                        <li>Fetch new data from Yahoo Finance</li>
+                        <li>Merge them together without duplicates</li>
+                        <li>Save the consolidated data file</li>
+                    </ul>
+                </div>
+            </div>
+            
+            {% if data_summary.has_consolidated_files %}
+                {% for file in data_summary.other_files %}
+                    {% if file.name == 'nifty_data_consolidated.csv' %}
+                        <p class="text-sm text-gray-500 mt-4">Last updated: {{ file.modified.strftime('%Y-%m-%d %H:%M:%S') }}</p>
+                    {% endif %}
+                {% endfor %}
+            {% endif %}
+        </div>
+    </div>
+    
+    <!-- Consolidate Files Tab -->
+    <div id="consolidate-tab" class="tab-content {% if active_tab != 'consolidate' %}hidden{% endif %}">
+        <div class="bg-white p-6 rounded-lg shadow mb-8">
+            <h2 class="text-xl font-semibold mb-4">Consolidate Data Files</h2>
+            
+            <p class="mb-4 text-gray-700">
+                If you have multiple data files (from different fetches), you can consolidate them into a single file.
+                This will merge all data, remove duplicates, and create a clean consolidated file.
+            </p>
+            
+            <form action="{{ url_for('data.consolidate') }}" method="post" class="mb-6">
+                <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md">
+                    Consolidate All Files
+                </button>
+            </form>
+            
+            {% if data_summary.has_consolidated_files and data_summary.other_files %}
+                <hr class="my-6 border-gray-200">
+                
+                <h3 class="text-lg font-medium mb-3">Delete Old Files</h3>
+                <p class="mb-4 text-gray-700">
+                    After consolidation, you can delete the original files to save space.
+                </p>
+                
+                <form action="{{ url_for('data.delete_old') }}" method="post">
+                    <button type="submit" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-md">
+                        Delete Old Files (Keep Consolidated Only)
+                    </button>
+                </form>
+            {% endif %}
+        </div>
+    </div>
+    
+    <!-- Export/Import Tab -->
+    <div id="export-import-tab" class="tab-content {% if active_tab != 'export-import' %}hidden{% endif %}">
+        <div class="bg-white p-6 rounded-lg shadow mb-8">
+            <h2 class="text-xl font-semibold mb-4">Export Data</h2>
+            
+            <form action="{{ url_for('data.export_data') }}" method="post" class="mb-6">
+                <div class="mb-4">
+                    <label for="export_format" class="block text-sm font-medium text-gray-700 mb-1">Export Format</label>
+                    <select id="export_format" name="export_format" class="border rounded-md px-3 py-2 w-48">
+                        <option value="CSV">CSV</option>
+                        <option value="Excel">Excel</option>
+                        <option value="JSON">JSON</option>
+                    </select>
+                </div>
+                
+                <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md">
+                    Export Consolidated Data
+                </button>
+            </form>
+            
+            <hr class="my-6 border-gray-200">
+            
+            <h2 class="text-xl font-semibold mb-4">Import Data</h2>
+            <p class="mb-4 text-gray-700">Upload CSV files to import data.</p>
+            
+            <form action="{{ url_for('data.import_data') }}" method="post" enctype="multipart/form-data">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                    <div>
+                        <label for="nifty_file" class="block text-sm font-medium text-gray-700 mb-1">NIFTY Data</label>
+                        <input type="file" id="nifty_file" name="nifty_file" accept=".csv" 
+                               class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+                    </div>
+                    
+                    <div>
+                        <label for="vix_file" class="block text-sm font-medium text-gray-700 mb-1">VIX Data</label>
+                        <input type="file" id="vix_file" name="vix_file" accept=".csv" 
+                               class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+                    </div>
+                </div>
+                
+                <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md">
+                    Import Data
+                </button>
+            </form>
+        </div>
+    </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        // Tab Switching
+        const dataTabs = document.querySelectorAll('.data-tab');
+        const tabContents = document.querySelectorAll('.tab-content');
+        
+        dataTabs.forEach(tab => {
+            tab.addEventListener('click', function(e) {
+                e.preventDefault();
+                const targetId = this.getAttribute('data-target');
+                
+                // Update URL hash
+                window.location.hash = this.getAttribute('href');
+                
+                // Update tab styles
+                dataTabs.forEach(t => {
+                    t.classList.remove('border-blue-600', 'text-blue-600');
+                    t.classList.add('border-transparent');
+                });
+                this.classList.add('border-blue-600', 'text-blue-600');
+                this.classList.remove('border-transparent');
+                
+                // Show target content, hide others
+                tabContents.forEach(content => {
+                    if (content.id === targetId) {
+                        content.classList.remove('hidden');
+                    } else {
+                        content.classList.add('hidden');
+                    }
+                });
+            });
+        });
+        
+        // Check URL hash on load
+        if (window.location.hash) {
+            const tab = document.querySelector(`.data-tab[href="${window.location.hash}"]`);
+            if (tab) {
+                tab.click();
+            }
+        }
+        
+        // Timeline Chart
+        {% if data_summary.has_consolidated_files and data_summary.nifty_date_range and data_summary.vix_date_range %}
+            const timelineData = [
+                {
+                    y: ['NIFTY'],
+                    x: [['{{ data_summary.nifty_date_range[0].date() }}', '{{ data_summary.nifty_date_range[1].date() }}']],
+                    type: 'bar',
+                    orientation: 'h',
+                    marker: {color: 'rgba(55, 83, 109, 0.7)'},
+                    hoverinfo: 'text',
+                    text: ['NIFTY: {{ data_summary.nifty_date_range[0].date() }} to {{ data_summary.nifty_date_range[1].date() }}']
+                },
+                {
+                    y: ['VIX'],
+                    x: [['{{ data_summary.vix_date_range[0].date() }}', '{{ data_summary.vix_date_range[1].date() }}']],
+                    type: 'bar',
+                    orientation: 'h',
+                    marker: {color: 'rgba(219, 64, 82, 0.7)'},
+                    hoverinfo: 'text',
+                    text: ['VIX: {{ data_summary.vix_date_range[0].date() }} to {{ data_summary.vix_date_range[1].date() }}']
+                }
+            ];
+            
+            const timelineLayout = {
+                title: '',
+                showlegend: false,
+                xaxis: {type: 'date'},
+                yaxis: {title: ''},
+                margin: {l: 50, r: 50, b: 20, t: 10, pad: 4},
+                barmode: 'stack'
+            };
+            
+            Plotly.newPlot('timeline-chart', timelineData, timelineLayout);
+        {% endif %}
+    });
+</script>
+{% endblock %} 

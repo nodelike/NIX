@@ -255,19 +255,19 @@ class AlphaZeroModel:
     
     def save(self, filepath):
         """
-        Save the model to a file
+        Save model to file
         
         Args:
-            filepath: Base file path to save to (without extension)
+            filepath: Path to save model files (prefix only, without extensions)
             
         Returns:
-            True if saved successfully, False otherwise
+            True if successful, False otherwise
         """
         try:
             # Create directory if it doesn't exist
             os.makedirs(os.path.dirname(filepath), exist_ok=True)
             
-            # Save policy and value models separately
+            # Use a consistent naming convention
             policy_path = f"{filepath}_policy.keras"
             value_path = f"{filepath}_value.keras"
             
@@ -288,27 +288,49 @@ class AlphaZeroModel:
     
     def load(self, filepath):
         """
-        Load the model from a file
+        Load model from file
         
         Args:
-            filepath: Base file path to load from (without extension)
+            filepath: Path to model files (prefix only, without extensions)
             
         Returns:
-            True if loaded successfully, False otherwise
+            True if successful, False otherwise
         """
         try:
-            # Check if model files exist
-            policy_path = f"{filepath}_policy.keras"
-            value_path = f"{filepath}_value.keras"
+            # Check for various possible file naming patterns
+            possible_policy_paths = [
+                f"{filepath}_policy.keras",  # New standard format
+                f"{filepath}_policy.h5",     # Old format
+                f"{filepath}.h5_policy.keras",  # Double extension format seen in the models directory
+                f"{filepath}.h5_policy.h5"   # Another possible format
+            ]
             
-            if not os.path.exists(policy_path) or not os.path.exists(value_path):
-                # Try older format (h5)
-                policy_path = f"{filepath}_policy.h5"
-                value_path = f"{filepath}_value.h5"
-                
-                if not os.path.exists(policy_path) or not os.path.exists(value_path):
-                    print(f"Model files not found at {filepath}")
-                    return False
+            possible_value_paths = [
+                f"{filepath}_value.keras",   # New standard format
+                f"{filepath}_value.h5",      # Old format
+                f"{filepath}.h5_value.keras",  # Double extension format seen in the models directory
+                f"{filepath}.h5_value.h5"    # Another possible format
+            ]
+            
+            # Find the first existing policy model file
+            policy_path = None
+            for path in possible_policy_paths:
+                if os.path.exists(path):
+                    policy_path = path
+                    break
+                    
+            # Find the first existing value model file
+            value_path = None
+            for path in possible_value_paths:
+                if os.path.exists(path):
+                    value_path = path
+                    break
+            
+            # If no files found, report error
+            if policy_path is None or value_path is None:
+                print(f"Model files not found at {filepath}")
+                print(f"Checked paths: {possible_policy_paths} and {possible_value_paths}")
+                return False
             
             print(f"Loading policy model from {policy_path}...")
             self.policy_model = tf.keras.models.load_model(policy_path)

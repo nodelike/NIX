@@ -8,6 +8,10 @@ import pandas as pd
 import glob
 import numpy as np
 import json
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Add the project path to the system path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -205,44 +209,33 @@ def train_mode():
 
 def launch_dashboard(backtest_results=None):
     """
-    Launch the dashboard application
+    Launch the Flask dashboard application
     
     Args:
         backtest_results: Optional dictionary with backtest results
     """
     try:
-        print("Launching dashboard...")
+        print("Launching Flask dashboard...")
         
-        # Use streamlit run command instead of importing directly
-        import subprocess
-        import os
+        # Import Flask app
+        from app import create_app
         
-        app_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "app", "app.py")
-        
-        # If we have backtest results, save them to a temporary file
-        results_file = None
+        # If we have backtest results, store them in a temporary file
         if backtest_results is not None:
             results_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "temp_results.json")
             with open(results_file, 'w') as f:
                 json.dump(backtest_results, f)
             
-            # Pass the file path as a parameter
-            cmd = ["streamlit", "run", app_path, "--", "--results_file", results_file]
-        else:
-            cmd = ["streamlit", "run", app_path]
+        # Create Flask app
+        app = create_app()
         
-        # Run the streamlit app in a subprocess
-        process = subprocess.Popen(cmd, 
-                                  stdout=subprocess.PIPE, 
-                                  stderr=subprocess.PIPE,
-                                  text=True)
-        
-        # Print the first few lines of output
-        for i, line in enumerate(process.stdout):
-            if i < 5:  # Just show first 5 lines
-                print(line.strip())
-            else:
-                break
+        # Run the Flask app
+        port = int(os.environ.get('PORT', 8080))
+        # In development, use debug mode and bind only to localhost
+        debug_mode = os.environ.get('FLASK_ENV', 'development') == 'development'
+        host = '127.0.0.1' if debug_mode else '0.0.0.0'
+        print(f"Running Flask app on http://{host}:{port}")
+        app.run(host=host, port=port, debug=debug_mode)
                 
     except Exception as e:
         print(f"Error launching dashboard: {e}")

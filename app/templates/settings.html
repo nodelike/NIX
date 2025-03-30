@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+
+{% block title %}Settings - AlphaZero Trader{% endblock %}
+
+{% block content %}
+    <h1 class="text-3xl font-bold mb-8">Settings</h1>
+    
+    <!-- Trading Parameters -->
+    <div class="bg-white p-6 rounded-lg shadow mb-8">
+        <h2 class="text-xl font-semibold mb-4">Trading Parameters</h2>
+        
+        <form action="{{ url_for('settings.save') }}" method="post">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-4">
+                <div>
+                    <label for="lot_size" class="block text-sm font-medium text-gray-700 mb-1">Lot Size</label>
+                    <input type="number" id="lot_size" name="lot_size" min="1" value="{{ settings.lot_size }}" 
+                           class="border rounded-md px-3 py-2 w-full">
+                    <p class="text-xs text-gray-500 mt-1">Number of shares per trade</p>
+                </div>
+                
+                <div>
+                    <label for="initial_capital" class="block text-sm font-medium text-gray-700 mb-1">Initial Capital (₹)</label>
+                    <input type="number" id="initial_capital" name="initial_capital" min="1000" value="{{ settings.initial_capital }}" 
+                           class="border rounded-md px-3 py-2 w-full">
+                    <p class="text-xs text-gray-500 mt-1">Starting capital for backtesting</p>
+                </div>
+                
+                <div>
+                    <label for="trade_time" class="block text-sm font-medium text-gray-700 mb-1">Trading Time (HH:MM)</label>
+                    <input type="text" id="trade_time" name="trade_time" value="{{ settings.trade_time }}" 
+                           class="border rounded-md px-3 py-2 w-full">
+                    <p class="text-xs text-gray-500 mt-1">Time of day to execute trades</p>
+                </div>
+            </div>
+            
+            <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md">
+                Save Settings
+            </button>
+        </form>
+    </div>
+    
+    <!-- Data Management Link -->
+    <div class="bg-white p-6 rounded-lg shadow mb-8">
+        <h2 class="text-xl font-semibold mb-4">Data Management</h2>
+        <p class="mb-4 text-gray-700">Manage your data files, update data, and more.</p>
+        
+        <a href="{{ url_for('data.index') }}" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md inline-block">
+            Go to Data Management
+        </a>
+    </div>
+    
+    <!-- System Information -->
+    <div class="bg-white p-6 rounded-lg shadow mb-8">
+        <h2 class="text-xl font-semibold mb-4">System Information</h2>
+        
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+                <h3 class="text-md font-medium mb-3">Application</h3>
+                <table class="min-w-full text-sm">
+                    <tbody>
+                        <tr class="border-b">
+                            <td class="py-2 pr-4 font-medium text-gray-700">Environment</td>
+                            <td class="py-2 text-gray-700">{{ config_info.env }}</td>
+                        </tr>
+                        <tr class="border-b">
+                            <td class="py-2 pr-4 font-medium text-gray-700">Data Directory</td>
+                            <td class="py-2 text-gray-700">{{ config_info.data_dir }}</td>
+                        </tr>
+                        <tr class="border-b">
+                            <td class="py-2 pr-4 font-medium text-gray-700">Model Directory</td>
+                            <td class="py-2 text-gray-700">{{ config_info.model_dir }}</td>
+                        </tr>
+                        <tr>
+                            <td class="py-2 pr-4 font-medium text-gray-700">Window Size</td>
+                            <td class="py-2 text-gray-700">{{ config_info.window_size }}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            
+            <div>
+                <h3 class="text-md font-medium mb-3">Session</h3>
+                <p class="text-gray-700 mb-2">Your settings are stored in both your session and a configuration file.</p>
+                <p class="text-gray-700 mb-4">Session data will expire after inactivity, but your configuration file persists between visits.</p>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Advanced Settings -->
+    <div class="bg-white p-6 rounded-lg shadow mb-8">
+        <h2 class="text-xl font-semibold mb-4">Advanced Settings</h2>
+        
+        <div class="border-l-4 border-yellow-500 bg-yellow-50 p-4 mb-6">
+            <p class="text-yellow-700">Warning: The following actions can't be undone.</p>
+        </div>
+        
+        <div class="mb-6">
+            <h3 class="text-lg font-medium mb-2">Session Management</h3>
+            <form action="{{ url_for('settings.reset') }}" method="post" onsubmit="return confirm('Are you sure you want to reset all settings? This will reset both your session data and configuration file to defaults.');">
+                <button type="submit" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-md">
+                    Reset Settings
+                </button>
+            </form>
+        </div>
+    </div>
+{% endblock %} 

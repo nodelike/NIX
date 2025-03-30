@@ -1,0 +1,370 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - AlphaZero Trader{% endblock %}
+
+{% block content %}
+    <h1 class="text-3xl font-bold mb-8">AlphaZero Trader Dashboard</h1>
+    
+    {% if not data_loaded %}
+    <!-- Data/Model Loading Section -->
+    <div class="bg-white p-6 rounded-lg shadow mb-8">
+        <h2 class="text-xl font-semibold text-gray-800 mb-4">Data and Model</h2>
+        <p class="mb-4">Welcome to AlphaZero Trader! To get started, you need to load market data and the AI model.</p>
+        
+        <div class="flex space-x-4">
+            <a href="{{ url_for('main.load_data') }}" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
+                Load Market Data
+            </a>
+            {% if data_loaded %}
+            <a href="{{ url_for('main.load_model') }}" class="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 {% if not data_loaded %}opacity-50 cursor-not-allowed{% endif %}">
+                Load AI Model
+            </a>
+            {% else %}
+            <button disabled class="px-4 py-2 bg-gray-400 text-white rounded-md cursor-not-allowed">
+                Load AI Model (Load Data First)
+            </button>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
+    {% if data_loaded %}
+    <!-- Summary metrics -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div class="bg-white p-6 rounded-lg shadow">
+            <h2 class="text-xl font-semibold text-gray-800 mb-2">NIFTY</h2>
+            <p class="text-3xl font-bold">
+                {{ nifty_latest_price|round(2) }}
+                <span class="text-lg {% if nifty_change >= 0 %}text-green-500{% else %}text-red-500{% endif %}">
+                    ({{ nifty_change|round(2) }}%)
+                </span>
+            </p>
+        </div>
+        
+        <div class="bg-white p-6 rounded-lg shadow">
+            <h2 class="text-xl font-semibold text-gray-800 mb-2">India VIX</h2>
+            <p class="text-3xl font-bold">
+                {{ vix_latest_price|round(2) }}
+                <span class="text-lg {% if vix_change >= 0 %}text-red-500{% else %}text-green-500{% endif %}">
+                    ({{ vix_change|round(2) }}%)
+                </span>
+            </p>
+        </div>
+        
+        <div class="bg-white p-6 rounded-lg shadow">
+            <h2 class="text-xl font-semibold text-gray-800 mb-2">
+                {% if latest_date == today %}
+                    Today's Prediction
+                {% else %}
+                    Next Day Prediction ({{ latest_date }})
+                {% endif %}
+            </h2>
+            {% if prediction %}
+                <p class="text-3xl font-bold {% if prediction.action == 'BUY' %}text-green-500{% elif prediction.action == 'SELL' %}text-red-500{% else %}text-gray-500{% endif %}">
+                    {{ prediction.action }}
+                </p>
+                <p class="text-lg">Confidence: {{ (prediction.confidence * 100)|round(1) }}%</p>
+                
+                {% if prediction.action != 'HOLD' and prediction.trade_info %}
+                    <div class="mt-4 text-sm">
+                        <p><strong>Entry Price:</strong> {{ prediction.trade_info.entry_price|round(2) }}</p>
+                        <p><strong>Stop Loss:</strong> {{ prediction.trade_info.stop_loss|round(2) }} 
+                            ({{ prediction.trade_info.sl_pct|round(1) }}%)
+                        </p>
+                        <p><strong>Take Profit:</strong> {{ prediction.trade_info.take_profit|round(2) }} 
+                            ({{ prediction.trade_info.tp_pct|round(1) }}%)
+                        </p>
+                        <p><strong>Lot Size:</strong> {{ prediction.trade_info.lot_size }} shares</p>
+                    </div>
+                {% endif %}
+            {% elif model_loaded %}
+                <p class="text-lg text-gray-500">No prediction available</p>
+            {% else %}
+                <div class="flex flex-col items-center">
+                    <p class="text-lg text-gray-500 mb-3">AI model not loaded</p>
+                    <a href="{{ url_for('main.load_model') }}" class="px-3 py-1 bg-green-600 text-white text-sm rounded-md hover:bg-green-700">
+                        Load Model
+                    </a>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+    
+    <!-- Market Data Section -->
+    <div class="mb-8">
+        <h2 class="text-2xl font-bold mb-4">Market Data</h2>
+        
+        <!-- Chart Type Selector -->
+        <div class="flex mb-4 space-x-2">
+            <a href="{{ url_for('main.dashboard', chart_type='line') }}" 
+               class="px-4 py-2 rounded-md {% if chart_type == 'line' %}bg-blue-600 text-white{% else %}bg-gray-200 text-gray-800 hover:bg-gray-300{% endif %}">
+                Line
+            </a>
+            <a href="{{ url_for('main.dashboard', chart_type='candlestick') }}" 
+               class="px-4 py-2 rounded-md {% if chart_type == 'candlestick' %}bg-blue-600 text-white{% else %}bg-gray-200 text-gray-800 hover:bg-gray-300{% endif %}">
+                Candlestick
+            </a>
+            <a href="{{ url_for('main.dashboard', chart_type='ohlc') }}" 
+               class="px-4 py-2 rounded-md {% if chart_type == 'ohlc' %}bg-blue-600 text-white{% else %}bg-gray-200 text-gray-800 hover:bg-gray-300{% endif %}">
+                OHLC
+            </a>
+        </div>
+        
+        <!-- Date Range Selector -->
+        <form action="{{ url_for('main.dashboard') }}" method="get" class="mb-6 bg-white p-4 rounded-lg shadow">
+            <input type="hidden" name="chart_type" value="{{ chart_type }}">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label for="start_date" class="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
+                    <input type="date" id="start_date" name="start_date" value="{{ start_date }}" 
+                           class="border rounded-md px-3 py-2 w-full">
+                </div>
+                <div>
+                    <label for="end_date" class="block text-sm font-medium text-gray-700 mb-1">End Date</label>
+                    <input type="date" id="end_date" name="end_date" value="{{ end_date }}" 
+                           class="border rounded-md px-3 py-2 w-full">
+                </div>
+            </div>
+            <button type="submit" class="mt-4 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md">
+                Apply
+            </button>
+        </form>
+        
+        <!-- Charts Tabs -->
+        <div class="mb-4 border-b border-gray-200">
+            <ul class="flex flex-wrap -mb-px">
+                <li class="mr-2">
+                    <a href="#" class="chart-tab inline-block py-2 px-4 border-b-2 {% if active_tab == 'nifty' %}border-blue-600 text-blue-600{% else %}border-transparent hover:text-gray-600 hover:border-gray-300{% endif %}" 
+                       data-target="nifty-chart">NIFTY</a>
+                </li>
+                <li class="mr-2">
+                    <a href="#" class="chart-tab inline-block py-2 px-4 border-b-2 {% if active_tab == 'vix' %}border-blue-600 text-blue-600{% else %}border-transparent hover:text-gray-600 hover:border-gray-300{% endif %}" 
+                       data-target="vix-chart">India VIX</a>
+                </li>
+                <li class="mr-2">
+                    <a href="#" class="chart-tab inline-block py-2 px-4 border-b-2 {% if active_tab == 'comparison' %}border-blue-600 text-blue-600{% else %}border-transparent hover:text-gray-600 hover:border-gray-300{% endif %}" 
+                       data-target="comparison-chart">Comparison</a>
+                </li>
+            </ul>
+        </div>
+        
+        <!-- Chart Content -->
+        <div class="bg-white p-4 rounded-lg shadow">
+            <div id="nifty-chart" class="chart-content h-96 {% if active_tab != 'nifty' %}hidden{% endif %}"></div>
+            <div id="vix-chart" class="chart-content h-96 {% if active_tab != 'vix' %}hidden{% endif %}"></div>
+            <div id="comparison-chart" class="chart-content h-96 {% if active_tab != 'comparison' %}hidden{% endif %}"></div>
+        </div>
+    </div>
+    
+    <!-- Trading History Section -->
+    {% if trade_history %}
+        <div class="mb-8">
+            <h2 class="text-2xl font-bold mb-4">Trading History</h2>
+            
+            <!-- Performance Metrics -->
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                <div class="bg-white p-4 rounded-lg shadow text-center">
+                    <p class="text-sm text-gray-500">Total Trades</p>
+                    <p class="text-2xl font-bold">{{ trade_metrics.total_trades }}</p>
+                </div>
+                <div class="bg-white p-4 rounded-lg shadow text-center">
+                    <p class="text-sm text-gray-500">Win Rate</p>
+                    <p class="text-2xl font-bold">{{ (trade_metrics.win_rate * 100)|round(1) }}%</p>
+                </div>
+                <div class="bg-white p-4 rounded-lg shadow text-center">
+                    <p class="text-sm text-gray-500">Total Return</p>
+                    <p class="text-2xl font-bold">{{ (trade_metrics.total_return * 100)|round(2) }}%</p>
+                </div>
+                <div class="bg-white p-4 rounded-lg shadow text-center">
+                    <p class="text-sm text-gray-500">Max Drawdown</p>
+                    <p class="text-2xl font-bold">{{ (trade_metrics.max_drawdown * 100)|round(2) }}%</p>
+                </div>
+            </div>
+            
+            <!-- Capital Chart -->
+            {% if trade_metrics.capital_data %}
+                <div class="bg-white p-4 rounded-lg shadow mb-6">
+                    <h3 class="text-lg font-semibold mb-3">Capital Growth</h3>
+                    <div id="capital-chart" class="h-80"></div>
+                </div>
+            {% endif %}
+            
+            <!-- Trades Table -->
+            <div class="bg-white p-4 rounded-lg shadow overflow-x-auto">
+                <h3 class="text-lg font-semibold mb-3">Trades</h3>
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Action</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Price</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Return</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Capital</th>
+                        </tr>
+                    </thead>
+                    <tbody class="bg-white divide-y divide-gray-200">
+                        {% for trade in trade_history %}
+                            <tr>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ trade.date }}</td>
+                                <td class="px-6 py-4 whitespace-nowrap">
+                                    <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
+                                        {% if trade.action == 'BUY' %}bg-green-100 text-green-800{% elif trade.action == 'SELL' %}bg-red-100 text-red-800{% else %}bg-gray-100 text-gray-800{% endif %}">
+                                        {{ trade.action }}
+                                    </span>
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ trade.price|round(2) }}</td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm {% if trade.return > 0 %}text-green-500{% elif trade.return < 0 %}text-red-500{% else %}text-gray-500{% endif %}">
+                                    {{ (trade.return * 100)|round(2) }}%
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">₹{{ trade.capital|round(2) }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    {% endif %}
+    {% else %}
+    <!-- Placeholder for when data isn't loaded -->
+    <div class="bg-white p-8 rounded-lg shadow text-center">
+        <h2 class="text-xl font-semibold text-gray-800 mb-4">No Data Available</h2>
+        <p class="text-gray-600 mb-6">Please load the market data to view charts and predictions.</p>
+        <p class="text-gray-600 mb-6">The AlphaZero Trader application requires NIFTY and India VIX data to function.</p>
+        <a href="{{ url_for('main.load_data') }}" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
+            Load Market Data
+        </a>
+    </div>
+    {% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        {% if data_loaded %}
+        // Tab switching functionality
+        const chartTabs = document.querySelectorAll('.chart-tab');
+        const chartContents = document.querySelectorAll('.chart-content');
+        
+        chartTabs.forEach(tab => {
+            tab.addEventListener('click', function(e) {
+                e.preventDefault();
+                const target = this.getAttribute('data-target');
+                
+                // Update active tab
+                chartTabs.forEach(t => {
+                    t.classList.remove('border-blue-600', 'text-blue-600');
+                    t.classList.add('border-transparent');
+                });
+                this.classList.remove('border-transparent');
+                this.classList.add('border-blue-600', 'text-blue-600');
+                
+                // Show target chart
+                chartContents.forEach(content => {
+                    content.classList.add('hidden');
+                    if (content.id === target) {
+                        content.classList.remove('hidden');
+                    }
+                });
+            });
+        });
+
+        // Check if we have valid data to display
+        const hasData = {{ nifty_data.dates|tojson|length > 0 and vix_data.dates|tojson|length > 0 }};
+        
+        if (hasData) {
+            // NIFTY Chart
+            const niftyData = {
+                x: {{ nifty_data.dates|tojson }},
+                y: {{ nifty_data.close|tojson }},
+                type: '{{ chart_type }}',
+                name: 'NIFTY',
+                line: { color: '#3B82F6' }
+            };
+
+            const niftyLayout = {
+                title: 'NIFTY Price',
+                xaxis: { title: 'Date' },
+                yaxis: { title: 'Price' },
+                height: 400,
+                margin: { t: 30, b: 30, l: 50, r: 30 }
+            };
+
+            Plotly.newPlot('nifty-chart', [niftyData], niftyLayout);
+
+            // VIX Chart
+            const vixData = {
+                x: {{ vix_data.dates|tojson }},
+                y: {{ vix_data.close|tojson }},
+                type: '{{ chart_type }}',
+                name: 'India VIX',
+                line: { color: '#EF4444' }
+            };
+
+            const vixLayout = {
+                title: 'India VIX',
+                xaxis: { title: 'Date' },
+                yaxis: { title: 'Price' },
+                height: 400,
+                margin: { t: 30, b: 30, l: 50, r: 30 }
+            };
+
+            Plotly.newPlot('vix-chart', [vixData], vixLayout);
+
+            // Comparison Chart
+            const comparisonData = [
+                {
+                    x: {{ nifty_data.dates|tojson }},
+                    y: {{ nifty_data.close|tojson }},
+                    type: '{{ chart_type }}',
+                    name: 'NIFTY',
+                    line: { color: '#3B82F6' }
+                },
+                {
+                    x: {{ vix_data.dates|tojson }},
+                    y: {{ vix_data.close|tojson }},
+                    type: '{{ chart_type }}',
+                    name: 'India VIX',
+                    line: { color: '#EF4444' }
+                }
+            ];
+
+            const comparisonLayout = {
+                title: 'NIFTY vs India VIX',
+                xaxis: { title: 'Date' },
+                yaxis: { title: 'Price' },
+                height: 400,
+                margin: { t: 30, b: 30, l: 50, r: 30 }
+            };
+
+            Plotly.newPlot('comparison-chart', comparisonData, comparisonLayout);
+        } else {
+            // Display empty placeholder messages in chart containers
+            document.getElementById('nifty-chart').innerHTML = '<div class="flex items-center justify-center h-full text-gray-500">No NIFTY data available</div>';
+            document.getElementById('vix-chart').innerHTML = '<div class="flex items-center justify-center h-full text-gray-500">No VIX data available</div>';
+            document.getElementById('comparison-chart').innerHTML = '<div class="flex items-center justify-center h-full text-gray-500">No comparison data available</div>';
+        }
+
+        // Capital Growth Chart
+        {% if trade_metrics and trade_metrics.capital_data %}
+        const capitalData = {
+            x: {{ trade_metrics.capital_data.dates|tojson }},
+            y: {{ trade_metrics.capital_data.values|tojson }},
+            type: 'line',
+            name: 'Capital',
+            line: { color: '#10B981' }
+        };
+
+        const capitalLayout = {
+            title: 'Capital Growth',
+            xaxis: { title: 'Date' },
+            yaxis: { title: 'Capital (₹)' },
+            height: 400,
+            margin: { t: 30, b: 30, l: 50, r: 30 }
+        };
+
+        Plotly.newPlot('capital-chart', [capitalData], capitalLayout);
+        {% endif %}
+        {% endif %}
+    });
+</script>
+{% endblock %} 

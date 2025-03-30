@@ -1,0 +1,441 @@
+{% extends "base.html" %}
+
+{% block title %}Model Training - AlphaZero Trader{% endblock %}
+
+{% block content %}
+    <h1 class="text-3xl font-bold mb-8">Model Training</h1>
+    
+    <!-- Training Information -->
+    <div class="bg-blue-50 border-l-4 border-blue-500 text-blue-700 p-4 mb-8">
+        <h2 class="text-lg font-semibold mb-2">Training Information</h2>
+        <p class="mb-2">
+            This page allows you to train the AlphaZero model for trading. 
+            Training involves two steps:
+        </p>
+        <ol class="list-decimal pl-5 mb-2">
+            <li><strong>Self-play:</strong> The model plays against itself to generate training examples</li>
+            <li><strong>Neural Network Training:</strong> The collected examples are used to train the neural network</li>
+        </ol>
+        <p>
+            Training can take some time, especially with more episodes and batches. If you encounter errors during training, 
+            you can try running the standalone training script by executing <code>python train_standalone.py</code> in your terminal.
+        </p>
+    </div>
+    
+    {% if not has_data %}
+        <div class="bg-yellow-50 border-l-4 border-yellow-500 text-yellow-700 p-4 mb-8">
+            <p class="font-semibold">No data available for training</p>
+            <p class="mt-2">Please make sure you have data available. Go to Data Management to fetch data.</p>
+            
+            <a href="{{ url_for('data.index') }}" class="mt-4 bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded-md inline-block">
+                Go to Data Management
+            </a>
+        </div>
+    {% else %}
+        <!-- Training Form -->
+        <div class="bg-white p-6 rounded-lg shadow mb-8">
+            <h2 class="text-xl font-semibold mb-4">Training Parameters</h2>
+            
+            <form id="training-form" action="{{ url_for('training.train') }}" method="post">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4">
+                    <div>
+                        <label for="episodes" class="block text-sm font-medium text-gray-700 mb-1">Self-play episodes</label>
+                        <input type="number" id="episodes" name="episodes" min="1" max="50" value="10" 
+                               class="border rounded-md px-3 py-2 w-full">
+                    </div>
+                    
+                    <div>
+                        <label for="simulation_steps" class="block text-sm font-medium text-gray-700 mb-1">MCTS simulation steps</label>
+                        <input type="number" id="simulation_steps" name="simulation_steps" min="10" max="200" value="50" 
+                               class="border rounded-md px-3 py-2 w-full">
+                    </div>
+                    
+                    <div>
+                        <label for="epochs" class="block text-sm font-medium text-gray-700 mb-1">Training epochs</label>
+                        <input type="number" id="epochs" name="epochs" min="5" max="100" value="20" 
+                               class="border rounded-md px-3 py-2 w-full">
+                    </div>
+                    
+                    <div>
+                        <label for="batch_size" class="block text-sm font-medium text-gray-700 mb-1">Batch size</label>
+                        <input type="number" id="batch_size" name="batch_size" min="16" max="256" value="64" step="16" 
+                               class="border rounded-md px-3 py-2 w-full">
+                    </div>
+                    
+                    <div>
+                        <label for="exploration_rate" class="block text-sm font-medium text-gray-700 mb-1">Exploration rate</label>
+                        <input type="number" id="exploration_rate" name="exploration_rate" min="0" max="1" value="0.25" step="0.05" 
+                               class="border rounded-md px-3 py-2 w-full">
+                    </div>
+                    
+                    <div>
+                        <label for="learning_rate" class="block text-sm font-medium text-gray-700 mb-1">Learning rate</label>
+                        <input type="number" id="learning_rate" name="learning_rate" min="0.0001" max="0.01" value="0.001" step="0.0001" 
+                               class="border rounded-md px-3 py-2 w-full">
+                    </div>
+                </div>
+                
+                <!-- Advanced Settings -->
+                <div class="mb-6">
+                    <details class="bg-gray-50 rounded-md">
+                        <summary class="cursor-pointer px-4 py-2 text-gray-700 font-medium">Advanced Settings</summary>
+                        <div class="p-4 grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div>
+                                <label for="lot_size" class="block text-sm font-medium text-gray-700 mb-1">Lot Size</label>
+                                <input type="number" id="lot_size" name="lot_size" min="1" max="1000" value="{{ session.get('lot_size', 50) }}" 
+                                       class="border rounded-md px-3 py-2 w-full">
+                            </div>
+                            
+                            <div>
+                                <label for="initial_capital" class="block text-sm font-medium text-gray-700 mb-1">Initial Capital</label>
+                                <input type="number" id="initial_capital" name="initial_capital" min="10000" max="10000000" value="{{ session.get('initial_capital', 100000) }}" step="10000" 
+                                       class="border rounded-md px-3 py-2 w-full">
+                            </div>
+                            
+                            <div>
+                                <label for="discount_factor" class="block text-sm font-medium text-gray-700 mb-1">Discount factor</label>
+                                <input type="number" id="discount_factor" name="discount_factor" min="0.9" max="0.999" value="0.99" step="0.01" 
+                                       class="border rounded-md px-3 py-2 w-full">
+                            </div>
+                            
+                            <div>
+                                <label for="dirichlet_alpha" class="block text-sm font-medium text-gray-700 mb-1">Dirichlet noise alpha</label>
+                                <input type="number" id="dirichlet_alpha" name="dirichlet_alpha" min="0.03" max="1.0" value="0.3" step="0.05" 
+                                       class="border rounded-md px-3 py-2 w-full">
+                            </div>
+                        </div>
+                    </details>
+                </div>
+                
+                <button type="submit" id="start-training-btn" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-md font-medium">
+                    Start Training
+                </button>
+            </form>
+        </div>
+        
+        <!-- Training Progress -->
+        <div id="training-progress-container" class="bg-white p-6 rounded-lg shadow mb-8 hidden">
+            <h2 class="text-xl font-semibold mb-4">Training Progress</h2>
+            
+            <div class="mb-4">
+                <div class="w-full bg-gray-200 rounded-full h-4">
+                    <div id="progress-bar" class="bg-blue-600 h-4 rounded-full" style="width: 0%"></div>
+                </div>
+                <p id="progress-status" class="text-sm text-gray-500 mt-1">Initializing...</p>
+            </div>
+            
+            <div id="metrics-container" class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                <div class="bg-gray-50 p-3 rounded border">
+                    <h3 class="text-sm font-medium text-gray-700">Policy Loss</h3>
+                    <p id="policy-loss" class="text-lg font-semibold">-</p>
+                </div>
+                <div class="bg-gray-50 p-3 rounded border">
+                    <h3 class="text-sm font-medium text-gray-700">Value Loss</h3>
+                    <p id="value-loss" class="text-lg font-semibold">-</p>
+                </div>
+                <div class="bg-gray-50 p-3 rounded border">
+                    <h3 class="text-sm font-medium text-gray-700">Total Loss</h3>
+                    <p id="total-loss" class="text-lg font-semibold">-</p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Training History -->
+        <div class="bg-white p-6 rounded-lg shadow">
+            <h2 class="text-xl font-semibold mb-4">Training History</h2>
+            
+            {% if training_history.rewards|length > 0 or training_history.policy_loss|length > 0 %}
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <!-- Rewards Chart -->
+                    {% if training_history.rewards|length > 0 %}
+                        <div>
+                            <h3 class="text-lg font-medium mb-2">Episode Rewards</h3>
+                            <canvas id="rewards-chart" class="w-full h-64"></canvas>
+                        </div>
+                    {% endif %}
+                    
+                    <!-- Action Distribution Chart -->
+                    {% if training_history.actions|length > 0 %}
+                        <div>
+                            <h3 class="text-lg font-medium mb-2">Action Distribution</h3>
+                            <canvas id="actions-chart" class="w-full h-64"></canvas>
+                        </div>
+                    {% endif %}
+                    
+                    <!-- Loss Chart -->
+                    {% if training_history.policy_loss|length > 0 or training_history.value_loss|length > 0 or training_history.total_loss|length > 0 %}
+                        <div>
+                            <h3 class="text-lg font-medium mb-2">Training Loss</h3>
+                            <canvas id="loss-chart" class="w-full h-64"></canvas>
+                        </div>
+                    {% endif %}
+                    
+                    <!-- Latest Metrics -->
+                    <div>
+                        <h3 class="text-lg font-medium mb-2">Latest Metrics</h3>
+                        <div class="bg-gray-50 p-4 rounded">
+                            {% if training_history.rewards|length > 0 %}
+                                <p class="mb-2">Latest Reward: {{ training_history.rewards[-1]|round(4) }}</p>
+                            {% endif %}
+                            
+                            {% if training_history.policy_loss|length > 0 %}
+                                <p class="mb-2">Latest Policy Loss: {{ training_history.policy_loss[-1]|round(4) }}</p>
+                            {% endif %}
+                            
+                            {% if training_history.value_loss|length > 0 %}
+                                <p class="mb-2">Latest Value Loss: {{ training_history.value_loss[-1]|round(4) }}</p>
+                            {% endif %}
+                            
+                            {% if training_history.total_loss|length > 0 %}
+                                <p>Latest Total Loss: {{ training_history.total_loss[-1]|round(4) }}</p>
+                            {% endif %}
+                            
+                            {% if not training_history.rewards and not training_history.policy_loss %}
+                                <p class="text-gray-500">No metrics available yet</p>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            {% else %}
+                <p class="text-gray-500">No training history available yet. Train a model to see metrics.</p>
+            {% endif %}
+        </div>
+    {% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        // Training form submission
+        const trainingForm = document.getElementById('training-form');
+        const startTrainingBtn = document.getElementById('start-training-btn');
+        const progressContainer = document.getElementById('training-progress-container');
+        const progressBar = document.getElementById('progress-bar');
+        const progressStatus = document.getElementById('progress-status');
+        
+        {% if training_history %}
+            // Render charts if training history exists
+            renderTrainingCharts();
+        {% endif %}
+        
+        // Handle training form submission
+        if (trainingForm) {
+            trainingForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                
+                // Show progress container
+                if (progressContainer) {
+                    progressContainer.classList.remove('hidden');
+                }
+                
+                // Disable button during training
+                if (startTrainingBtn) {
+                    startTrainingBtn.disabled = true;
+                    startTrainingBtn.textContent = 'Training in progress...';
+                    startTrainingBtn.classList.add('opacity-75', 'cursor-not-allowed');
+                }
+                
+                // Poll for progress updates
+                let intervalId = setInterval(function() {
+                    fetch('{{ url_for("training.progress") }}')
+                        .then(response => response.json())
+                        .then(data => {
+                            // Update progress bar
+                            if (progressBar && 'progress_pct' in data) {
+                                progressBar.style.width = data.progress_pct + '%';
+                            }
+                            
+                            // Update status text
+                            if (progressStatus && 'progress' in data) {
+                                const progress = data.progress;
+                                if ('episode' in progress && 'total_episodes' in progress) {
+                                    progressStatus.textContent = `Self-play episode ${progress.episode}/${progress.total_episodes}`;
+                                } else if ('batch' in progress && 'total_batches' in progress) {
+                                    progressStatus.textContent = `Training batch ${progress.batch}/${progress.total_batches}`;
+                                }
+                            }
+                            
+                            // Update metrics
+                            if ('history' in data) {
+                                const history = data.history;
+                                
+                                // Update policy loss
+                                if ('policy_loss' in history && history.policy_loss.length > 0) {
+                                    const policyLoss = document.getElementById('policy-loss');
+                                    if (policyLoss) {
+                                        policyLoss.textContent = history.policy_loss[history.policy_loss.length - 1].toFixed(4);
+                                    }
+                                }
+                                
+                                // Update value loss
+                                if ('value_loss' in history && history.value_loss.length > 0) {
+                                    const valueLoss = document.getElementById('value-loss');
+                                    if (valueLoss) {
+                                        valueLoss.textContent = history.value_loss[history.value_loss.length - 1].toFixed(4);
+                                    }
+                                }
+                                
+                                // Update total loss
+                                if ('total_loss' in history && history.total_loss.length > 0) {
+                                    const totalLoss = document.getElementById('total-loss');
+                                    if (totalLoss) {
+                                        totalLoss.textContent = history.total_loss[history.total_loss.length - 1].toFixed(4);
+                                    }
+                                }
+                            }
+                        });
+                }, 2000);
+                
+                // Submit the form
+                this.submit();
+                
+                // Clear the interval after a timeout (30 mins)
+                setTimeout(function() {
+                    clearInterval(intervalId);
+                }, 30 * 60 * 1000);
+            });
+        }
+        
+        function renderTrainingCharts() {
+            // Rewards Chart
+            const rewardsData = {{ training_history.rewards|tojson }};
+            if (rewardsData && rewardsData.length > 0) {
+                const rewardsCtx = document.getElementById('rewards-chart');
+                if (rewardsCtx) {
+                    new Chart(rewardsCtx, {
+                        type: 'line',
+                        data: {
+                            labels: Array.from({ length: rewardsData.length }, (_, i) => i + 1),
+                            datasets: [{
+                                label: 'Episode Rewards',
+                                data: rewardsData,
+                                borderColor: 'rgb(59, 130, 246)',
+                                backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                                tension: 0.1
+                            }]
+                        },
+                        options: {
+                            scales: {
+                                y: {
+                                    beginAtZero: false
+                                }
+                            }
+                        }
+                    });
+                }
+            }
+            
+            // Actions Chart
+            const actionsData = {{ training_history.actions|tojson }};
+            if (actionsData && actionsData.length > 0) {
+                const actionsCtx = document.getElementById('actions-chart');
+                if (actionsCtx) {
+                    // Extract buy, sell, hold counts
+                    const buyData = actionsData.map(a => a.buy || 0);
+                    const sellData = actionsData.map(a => a.sell || 0);
+                    const holdData = actionsData.map(a => a.hold || 0);
+                    
+                    new Chart(actionsCtx, {
+                        type: 'bar',
+                        data: {
+                            labels: Array.from({ length: actionsData.length }, (_, i) => i + 1),
+                            datasets: [
+                                {
+                                    label: 'Buy',
+                                    data: buyData,
+                                    backgroundColor: 'rgba(34, 197, 94, 0.8)',
+                                },
+                                {
+                                    label: 'Sell',
+                                    data: sellData,
+                                    backgroundColor: 'rgba(239, 68, 68, 0.8)',
+                                },
+                                {
+                                    label: 'Hold',
+                                    data: holdData,
+                                    backgroundColor: 'rgba(107, 114, 128, 0.8)',
+                                }
+                            ]
+                        },
+                        options: {
+                            scales: {
+                                x: {
+                                    stacked: true,
+                                },
+                                y: {
+                                    stacked: true,
+                                    beginAtZero: true
+                                }
+                            }
+                        }
+                    });
+                }
+            }
+            
+            // Loss Chart
+            const policyLossData = {{ training_history.policy_loss|tojson }};
+            const valueLossData = {{ training_history.value_loss|tojson }};
+            const totalLossData = {{ training_history.total_loss|tojson }};
+            
+            if ((policyLossData && policyLossData.length > 0) || 
+                (valueLossData && valueLossData.length > 0) || 
+                (totalLossData && totalLossData.length > 0)) {
+                
+                const lossCtx = document.getElementById('loss-chart');
+                if (lossCtx) {
+                    const datasets = [];
+                    
+                    if (policyLossData && policyLossData.length > 0) {
+                        datasets.push({
+                            label: 'Policy Loss',
+                            data: policyLossData,
+                            borderColor: 'rgb(239, 68, 68)',
+                            backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                            tension: 0.1
+                        });
+                    }
+                    
+                    if (valueLossData && valueLossData.length > 0) {
+                        datasets.push({
+                            label: 'Value Loss',
+                            data: valueLossData,
+                            borderColor: 'rgb(34, 197, 94)',
+                            backgroundColor: 'rgba(34, 197, 94, 0.1)',
+                            tension: 0.1
+                        });
+                    }
+                    
+                    if (totalLossData && totalLossData.length > 0) {
+                        datasets.push({
+                            label: 'Total Loss',
+                            data: totalLossData,
+                            borderColor: 'rgb(59, 130, 246)',
+                            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                            tension: 0.1
+                        });
+                    }
+                    
+                    new Chart(lossCtx, {
+                        type: 'line',
+                        data: {
+                            labels: Array.from({ length: Math.max(
+                                policyLossData ? policyLossData.length : 0,
+                                valueLossData ? valueLossData.length : 0,
+                                totalLossData ? totalLossData.length : 0
+                            ) }, (_, i) => i + 1),
+                            datasets: datasets
+                        },
+                        options: {
+                            scales: {
+                                y: {
+                                    beginAtZero: false
+                                }
+                            }
+                        }
+                    });
+                }
+            }
+        }
+    });
+</script>
+{% endblock %} 

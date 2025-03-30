@@ -1,0 +1,285 @@
+{% extends "base.html" %}
+
+{% block title %}Backtesting - AlphaZero Trader{% endblock %}
+
+{% block content %}
+    <h1 class="text-3xl font-bold mb-8">Model Backtesting</h1>
+    
+    {% if not has_data %}
+        <div class="bg-yellow-50 border-l-4 border-yellow-500 text-yellow-700 p-4 mb-8">
+            <p class="font-semibold">No data available for backtesting</p>
+            <p class="mt-2">Please make sure you have data available and a trained model.</p>
+            
+            <a href="{{ url_for('data.index') }}" class="mt-4 bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded-md inline-block">
+                Go to Data Management
+            </a>
+        </div>
+    {% elif backtest_results %}
+        <!-- Backtest Results Section -->
+        <div class="bg-white p-6 rounded-lg shadow mb-8">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-semibold">Backtest Results</h2>
+                <form action="{{ url_for('backtesting.clear') }}" method="post">
+                    <button type="submit" class="text-red-600 hover:text-red-700 text-sm font-medium">
+                        Clear Results
+                    </button>
+                </form>
+            </div>
+            
+            <!-- Metrics Summary -->
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                <div class="bg-gray-50 p-4 rounded-lg text-center">
+                    <p class="text-sm text-gray-500">Total Trades</p>
+                    <p class="text-2xl font-bold">{{ backtest_results.get('total_trades', 0) }}</p>
+                </div>
+                <div class="bg-gray-50 p-4 rounded-lg text-center">
+                    <p class="text-sm text-gray-500">Win Rate</p>
+                    <p class="text-2xl font-bold">{{ (backtest_results.get('win_rate', 0) * 100)|round(2) }}%</p>
+                </div>
+                <div class="bg-gray-50 p-4 rounded-lg text-center">
+                    <p class="text-sm text-gray-500">Total Return</p>
+                    <p class="text-2xl font-bold">{{ (backtest_results.get('total_return', 0) * 100)|round(2) }}%</p>
+                </div>
+                <div class="bg-gray-50 p-4 rounded-lg text-center">
+                    <p class="text-sm text-gray-500">Max Drawdown</p>
+                    <p class="text-2xl font-bold">{{ (backtest_results.get('max_drawdown', 0) * 100)|round(2) }}%</p>
+                </div>
+            </div>
+            
+            <!-- Backtest Chart -->
+            <div id="backtest-chart" class="h-96 mb-6"></div>
+            
+            <!-- Trade Statistics -->
+            {% if backtest_results.get('trade_history') %}
+                <h3 class="text-lg font-medium mb-3">Trade Statistics</h3>
+                
+                <!-- Action Distribution Chart -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                    <div id="action-distribution-chart" class="h-64"></div>
+                    
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {% set profitable_trades = backtest_results.get('profitable_trades', 0) %}
+                        <div class="bg-gray-50 p-4 rounded-lg text-center">
+                            <p class="text-sm text-gray-500">Profitable Trades</p>
+                            <p class="text-2xl font-bold">{{ profitable_trades }}</p>
+                        </div>
+                        
+                        {% set losing_trades = backtest_results.get('total_trades', 0) - profitable_trades %}
+                        <div class="bg-gray-50 p-4 rounded-lg text-center">
+                            <p class="text-sm text-gray-500">Losing Trades</p>
+                            <p class="text-2xl font-bold">{{ losing_trades }}</p>
+                        </div>
+                        
+                        {% if backtest_results.get('sharpe_ratio') is defined %}
+                            <div class="bg-gray-50 p-4 rounded-lg text-center">
+                                <p class="text-sm text-gray-500">Sharpe Ratio</p>
+                                <p class="text-2xl font-bold">{{ backtest_results.get('sharpe_ratio', 0)|round(2) }}</p>
+                            </div>
+                        {% endif %}
+                        
+                        {% if backtest_results.get('final_capital') is defined %}
+                            <div class="bg-gray-50 p-4 rounded-lg text-center">
+                                <p class="text-sm text-gray-500">Final Capital</p>
+                                <p class="text-2xl font-bold">₹{{ backtest_results.get('final_capital', 0)|round(2) }}</p>
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+                
+                <!-- Trade Table -->
+                <h3 class="text-lg font-medium mb-3">Trade Details</h3>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Action</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Price</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Return</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Capital</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200">
+                            {% for trade in backtest_results.get('trade_history', []) %}
+                                <tr>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ trade.get('date', '') }}</td>
+                                    <td class="px-6 py-4 whitespace-nowrap">
+                                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
+                                            {% if trade.get('action') == 'BUY' %}bg-green-100 text-green-800{% elif trade.get('action') == 'SELL' %}bg-red-100 text-red-800{% else %}bg-gray-100 text-gray-800{% endif %}">
+                                            {{ trade.get('action', '') }}
+                                        </span>
+                                    </td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ trade.get('price', 0)|round(2) }}</td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm {% if trade.get('return', 0) > 0 %}text-green-500{% elif trade.get('return', 0) < 0 %}text-red-500{% else %}text-gray-500{% endif %}">
+                                        {{ (trade.get('return', 0) * 100)|round(2) }}%
+                                    </td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">₹{{ trade.get('capital', 0)|round(2) }}</td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <div class="bg-yellow-50 border-l-4 border-yellow-500 text-yellow-700 p-4">
+                    <p>No trades were executed during the backtest period.</p>
+                </div>
+            {% endif %}
+        </div>
+    {% else %}
+        <!-- Backtest Form Section -->
+        <div class="bg-white p-6 rounded-lg shadow mb-8">
+            <h2 class="text-xl font-semibold mb-4">Backtest Parameters</h2>
+            
+            <form action="{{ url_for('backtesting.run_backtest') }}" method="post">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                    <!-- Date Range -->
+                    <div>
+                        <label for="start_date" class="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
+                        <input type="date" id="start_date" name="start_date" value="{{ start_date }}" 
+                               class="border rounded-md px-3 py-2 w-full">
+                    </div>
+                    
+                    <div>
+                        <label for="end_date" class="block text-sm font-medium text-gray-700 mb-1">End Date</label>
+                        <input type="date" id="end_date" name="end_date" value="{{ end_date }}" 
+                               class="border rounded-md px-3 py-2 w-full">
+                    </div>
+                    
+                    <!-- Use MCTS -->
+                    <div class="flex items-center">
+                        <input type="checkbox" id="use_mcts" name="use_mcts" class="h-4 w-4 text-blue-600 rounded"
+                               {% if use_mcts %}checked{% endif %}>
+                        <label for="use_mcts" class="ml-2 block text-sm text-gray-700">
+                            Use MCTS (Monte Carlo Tree Search for better predictions)
+                        </label>
+                    </div>
+                    
+                    <!-- Trading Parameters -->
+                    <div class="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label for="lot_size" class="block text-sm font-medium text-gray-700 mb-1">Lot Size</label>
+                            <input type="number" id="lot_size" name="lot_size" min="1" max="1000" 
+                                   value="{{ session.get('lot_size', 50) }}" 
+                                   class="border rounded-md px-3 py-2 w-full">
+                        </div>
+                        
+                        <div>
+                            <label for="initial_capital" class="block text-sm font-medium text-gray-700 mb-1">Initial Capital</label>
+                            <input type="number" id="initial_capital" name="initial_capital" 
+                                   min="10000" max="10000000" step="10000"
+                                   value="{{ session.get('initial_capital', 100000) }}" 
+                                   class="border rounded-md px-3 py-2 w-full">
+                        </div>
+                    </div>
+                </div>
+                
+                <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md">
+                    Start Backtest
+                </button>
+            </form>
+        </div>
+    {% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if backtest_results %}
+<script>
+    document.addEventListener('DOMContentLoaded', function () {
+        // Extract data for charts
+        const backtest_results = {{ backtest_results|tojson }};
+        
+        // Backtest Chart
+        if (backtest_results && backtest_results.results_df) {
+            const results_df = backtest_results.results_df;
+            const dates = results_df.map(item => item.date);
+            const capital = results_df.map(item => item.capital);
+            
+            // Create the capital trace
+            const capitalTrace = {
+                x: dates,
+                y: capital,
+                type: 'scatter',
+                mode: 'lines',
+                name: 'Capital',
+                line: { color: 'blue' }
+            };
+            
+            // Add price if available
+            let traces = [capitalTrace];
+            let layout = {
+                title: 'Backtest Results',
+                xaxis: { title: 'Date' },
+                yaxis: { title: 'Capital (₹)', side: 'left' }
+            };
+            
+            if (results_df[0].price) {
+                const price = results_df.map(item => item.price);
+                const priceTrace = {
+                    x: dates,
+                    y: price,
+                    type: 'scatter',
+                    mode: 'lines',
+                    name: 'NIFTY',
+                    line: { color: 'gray', width: 1 },
+                    yaxis: 'y2'
+                };
+                
+                traces.push(priceTrace);
+                layout.yaxis2 = {
+                    title: 'NIFTY',
+                    overlaying: 'y',
+                    side: 'right'
+                };
+            }
+            
+            layout.legend = { x: 0, y: 1, orientation: 'h' };
+            
+            Plotly.newPlot('backtest-chart', traces, layout);
+        }
+        
+        // Action Distribution Chart
+        if (backtest_results && backtest_results.trade_history) {
+            const trades = backtest_results.trade_history;
+            const actions = trades.map(t => t.action);
+            
+            // Count actions
+            const actionCounts = {};
+            actions.forEach(action => {
+                if (!actionCounts[action]) {
+                    actionCounts[action] = 0;
+                }
+                actionCounts[action]++;
+            });
+            
+            // Create chart data
+            const actionLabels = Object.keys(actionCounts);
+            const actionValues = Object.values(actionCounts);
+            const actionColors = actionLabels.map(action => {
+                if (action === 'BUY') return 'rgba(34, 197, 94, 0.8)';
+                if (action === 'SELL') return 'rgba(239, 68, 68, 0.8)';
+                return 'rgba(107, 114, 128, 0.8)';
+            });
+            
+            const actionData = [{
+                labels: actionLabels,
+                values: actionValues,
+                type: 'pie',
+                marker: {
+                    colors: actionColors
+                },
+                textinfo: 'label+percent',
+                hoverinfo: 'label+value+percent'
+            }];
+            
+            const actionLayout = {
+                title: 'Trading Action Distribution',
+                showlegend: true,
+                height: 250
+            };
+            
+            Plotly.newPlot('action-distribution-chart', actionData, actionLayout);
+        }
+    });
+</script>
+{% endif %}
+{% endblock %} 

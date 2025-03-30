@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 
 def load_from_csv(nifty_csv_path, vix_csv_path):
     """
-    Load NIFTY and VIX data from CSV files
+    Load NIFTY and VIX data from CSV files with consistent alignment
     
     Args:
         nifty_csv_path: Path to NIFTY CSV file
@@ -17,27 +17,34 @@ def load_from_csv(nifty_csv_path, vix_csv_path):
         Tuple of (nifty_df, vix_df)
     """
     try:
-        nifty_df = pd.read_csv(nifty_csv_path, index_col=0, parse_dates=True)
-        vix_df = pd.read_csv(vix_csv_path, index_col=0, parse_dates=True)
+        if not os.path.exists(nifty_csv_path):
+            print(f"NIFTY data file not found: {nifty_csv_path}")
+            return None, None
+            
+        if not os.path.exists(vix_csv_path):
+            print(f"VIX data file not found: {vix_csv_path}")
+            return None, None
+            
+        # Load data with proper error handling
+        try:
+            nifty_df = pd.read_csv(nifty_csv_path, index_col=0, parse_dates=True)
+        except Exception as e:
+            print(f"Error reading NIFTY data file: {e}")
+            return None, None
+            
+        try:
+            vix_df = pd.read_csv(vix_csv_path, index_col=0, parse_dates=True)
+        except Exception as e:
+            print(f"Error reading VIX data file: {e}")
+            return None, None
         
-        # Ensure DatetimeIndex
-        if not isinstance(nifty_df.index, pd.DatetimeIndex):
-            nifty_df.index = pd.to_datetime(nifty_df.index)
-            
-        if not isinstance(vix_df.index, pd.DatetimeIndex):
-            vix_df.index = pd.to_datetime(vix_df.index)
-            
-        # Convert to timezone-naive datetime for consistency
-        if nifty_df.index.tz is not None:
-            nifty_df = nifty_df.tz_localize(None)
-        if vix_df.index.tz is not None:
-            vix_df = vix_df.tz_localize(None)
-            
-        print(f"Loaded {len(nifty_df)} NIFTY records and {len(vix_df)} VIX records from CSV")
-        return nifty_df, vix_df
+        # Process the data using our centralized function
+        return process_market_data(nifty_df, vix_df)
     
     except Exception as e:
         print(f"Error loading data from CSV: {e}")
+        import traceback
+        traceback.print_exc()
         return None, None
 
 def fetch_new_data(start_date=None, end_date=None, days=30):
@@ -60,6 +67,12 @@ def fetch_new_data(start_date=None, end_date=None, days=30):
         if start_date is None:
             start_date = end_date - timedelta(days=days)
         
+        # Ensure both dates have the same timezone
+        if start_date.tzinfo is None:
+            start_date = start_date.replace(tzinfo=ZoneInfo("Asia/Kolkata"))
+        if end_date.tzinfo is None:
+            end_date = end_date.replace(tzinfo=ZoneInfo("Asia/Kolkata"))
+        
         print(f"Fetching data from {start_date.date()} to {end_date.date()}")
         
         # Get NIFTY data
@@ -68,11 +81,23 @@ def fetch_new_data(start_date=None, end_date=None, days=30):
         # Get India VIX data
         vix_df = get_chunked_data("^INDIAVIX", start_date, end_date)
         
+        if nifty_df is None or vix_df is None:
+            print("Error: Failed to fetch market data.")
+            return None, None
+            
+        if nifty_df.empty or vix_df.empty:
+            print("Warning: Fetched data is empty.")
+            return nifty_df, vix_df
+            
         print(f"Fetched {len(nifty_df)} NIFTY records and {len(vix_df)} VIX records")
-        return nifty_df, vix_df
+        
+        # Process and align the data
+        return process_market_data(nifty_df, vix_df)
     
     except Exception as e:
         print(f"Error fetching data: {e}")
+        import traceback
+        traceback.print_exc()
         return None, None
 
 def get_chunked_data(ticker_symbol, start_date, end_date, chunk_days=5):
@@ -113,7 +138,9 @@ def get_chunked_data(ticker_symbol, start_date, end_date, chunk_days=5):
         current_start = current_end
     
     if not chunks:
-        raise ValueError(f"No data retrieved for {ticker_symbol}")
+        print(f"Warning: No data retrieved for {ticker_symbol}")
+        # Return an empty DataFrame with expected columns instead of raising an error
+        return pd.DataFrame(columns=['Open', 'High', 'Low', 'Close', 'Volume'])
         
     result = pd.concat(chunks).sort_index().drop_duplicates()
     return result
@@ -247,46 +274,89 @@ def update_data(days=30, data_dir='data'):
     Returns:
         Tuple of (nifty_df, vix_df) updated dataframes
     """
-    # Try to load consolidated data first
-    nifty_consolidated_path = os.path.join(data_dir, 'nifty_data_consolidated.csv')
-    vix_consolidated_path = os.path.join(data_dir, 'vix_data_consolidated.csv')
-    
-    if os.path.exists(nifty_consolidated_path) and os.path.exists(vix_consolidated_path):
-        existing_nifty, existing_vix = load_from_csv(nifty_consolidated_path, vix_consolidated_path)
-    else:
-        # If no consolidated files, try to consolidate all files
-        existing_nifty, existing_vix = consolidate_csv_files(data_dir)
-    
-    # Determine date range for fetching new data
-    end_date = datetime.now(ZoneInfo("Asia/Kolkata"))
-    
-    if existing_nifty is not None and not existing_nifty.empty:
-        # Get the latest date in the existing data
-        latest_date = existing_nifty.index.max()
+    try:
+        # Create data directory if it doesn't exist
+        os.makedirs(data_dir, exist_ok=True)
         
-        # Set start_date to the day after the latest date in existing data
-        start_date = latest_date + timedelta(days=1)
+        # Try to load consolidated data first
+        nifty_consolidated_path = os.path.join(data_dir, 'nifty_data_consolidated.csv')
+        vix_consolidated_path = os.path.join(data_dir, 'vix_data_consolidated.csv')
         
-        # If the latest date is very recent, set start_date to days before end_date
-        # to ensure some overlap for proper merging
-        if (end_date - latest_date).days < 5:
+        # Check if we already have data files
+        have_existing_data = os.path.exists(nifty_consolidated_path) and os.path.exists(vix_consolidated_path)
+        
+        # Set up dates for fetching
+        end_date = datetime.now(ZoneInfo("Asia/Kolkata"))
+        
+        if have_existing_data:
+            # Load existing data
+            existing_nifty, existing_vix = load_from_csv(nifty_consolidated_path, vix_consolidated_path)
+            
+            if existing_nifty is None or existing_vix is None:
+                print("Error loading existing data files. Will fetch new data.")
+                start_date = end_date - timedelta(days=days)
+            else:
+                # Get latest date from existing data
+                latest_date = max(existing_nifty.index.max(), existing_vix.index.max())
+                
+                # Fetch from the day after our latest date
+                start_date = latest_date + timedelta(days=1)
+                
+                # If latest date is today, no need to update
+                if latest_date.date() >= end_date.date():
+                    print("Data already up to date. No new data to fetch.")
+                    return existing_nifty, existing_vix
+        else:
+            # No existing data, fetch for the requested number of days
             start_date = end_date - timedelta(days=days)
-    else:
-        # No existing data, fetch for the specified days
-        start_date = end_date - timedelta(days=days)
-    
-    # Fetch new data
-    new_nifty, new_vix = fetch_new_data(start_date, end_date)
-    
-    # Merge existing and new data
-    updated_nifty = merge_dataframes(existing_nifty, new_nifty)
-    updated_vix = merge_dataframes(existing_vix, new_vix)
-    
-    # Save updated data
-    if updated_nifty is not None and updated_vix is not None:
-        save_to_csv(updated_nifty, updated_vix, data_dir)
-    
-    return updated_nifty, updated_vix
+            existing_nifty, existing_vix = None, None
+        
+        # Ensure both dates have the same timezone for comparison
+        if start_date.tzinfo is None and end_date.tzinfo is not None:
+            start_date = start_date.replace(tzinfo=end_date.tzinfo)
+        elif start_date.tzinfo is not None and end_date.tzinfo is None:
+            end_date = end_date.replace(tzinfo=start_date.tzinfo)
+            
+        # Fetch new data if needed
+        if (end_date - start_date).days < 1:
+            print("No new data to fetch.")
+            return existing_nifty, existing_vix
+            
+        print(f"Fetching new data from {start_date.date()} to {end_date.date()}")
+        new_nifty, new_vix = fetch_new_data(start_date, end_date)
+        
+        # Check if we actually got new data
+        if new_nifty is None or new_vix is None:
+            print("No new data fetched. Fetch operation returned None.")
+            return existing_nifty, existing_vix
+            
+        if len(new_nifty) == 0 or len(new_vix) == 0:
+            print("New data is empty.")
+            return existing_nifty, existing_vix
+            
+        # If we have existing data, merge with new data
+        if existing_nifty is not None and existing_vix is not None:
+            print("Merging new data with existing data...")
+            merged_nifty = merge_dataframes(existing_nifty, new_nifty)
+            merged_vix = merge_dataframes(existing_vix, new_vix)
+        else:
+            merged_nifty = new_nifty
+            merged_vix = new_vix
+        
+        # Process and align the merged data
+        processed_nifty, processed_vix = process_market_data(merged_nifty, merged_vix)
+        
+        # Save updated data
+        if processed_nifty is not None and processed_vix is not None:
+            save_to_csv(processed_nifty, processed_vix, data_dir, consolidated=True)
+            
+        return processed_nifty, processed_vix
+        
+    except Exception as e:
+        print(f"Error updating data: {e}")
+        import traceback
+        traceback.print_exc()
+        return None, None
 
 def get_data_summary(data_dir='data'):
     """
@@ -374,4 +444,99 @@ def get_latest_data(data_dir='data', load_from_disk=True, fetch_days=30):
     if nifty_df is None or vix_df is None:
         nifty_df, vix_df = update_data(fetch_days, data_dir)
     
-    return nifty_df, vix_df 
+    return nifty_df, vix_df
+
+def process_market_data(nifty_df, vix_df):
+    """
+    Process and align market data from any source
+    
+    Args:
+        nifty_df: DataFrame with NIFTY data
+        vix_df: DataFrame with VIX data
+        
+    Returns:
+        Tuple of processed (nifty_df, vix_df)
+    """
+    try:
+        if nifty_df is None or vix_df is None:
+            print("Error: One or both dataframes are None")
+            return None, None
+            
+        if len(nifty_df) == 0 or len(vix_df) == 0:
+            print("Error: One or both dataframes are empty")
+            return None, None
+        
+        # Ensure DatetimeIndex
+        if not isinstance(nifty_df.index, pd.DatetimeIndex):
+            nifty_df.index = pd.to_datetime(nifty_df.index)
+            
+        if not isinstance(vix_df.index, pd.DatetimeIndex):
+            vix_df.index = pd.to_datetime(vix_df.index)
+        
+        # Normalize timezone handling
+        # First, make sure both have the same timezone (or no timezone)
+        if nifty_df.index.tz is None and vix_df.index.tz is not None:
+            nifty_df.index = nifty_df.index.tz_localize(vix_df.index.tz)
+        elif nifty_df.index.tz is not None and vix_df.index.tz is None:
+            vix_df.index = vix_df.index.tz_localize(nifty_df.index.tz)
+        elif nifty_df.index.tz is None and vix_df.index.tz is None:
+            # If both are timezone-naive, localize to Asia/Kolkata
+            nifty_df.index = nifty_df.index.tz_localize('Asia/Kolkata')
+            vix_df.index = vix_df.index.tz_localize('Asia/Kolkata')
+            
+        # Make sure both dataframes are sorted by index
+        nifty_df = nifty_df.sort_index()
+        vix_df = vix_df.sort_index()
+        
+        # Find common dates between both dataframes
+        common_dates = nifty_df.index.intersection(vix_df.index)
+        
+        # If there are no common dates, return None
+        if len(common_dates) == 0:
+            print("Error: No common dates between NIFTY and VIX data.")
+            return None, None
+            
+        # Use only the common dates for both dataframes
+        nifty_df = nifty_df.loc[common_dates]
+        vix_df = vix_df.loc[common_dates]
+        
+        # Perform an additional check to ensure both dataframes have the same length
+        if len(nifty_df) != len(vix_df):
+            print(f"Warning: Length mismatch after alignment. NIFTY: {len(nifty_df)}, VIX: {len(vix_df)}")
+            
+            # Use the minimum length to ensure they match
+            min_length = min(len(nifty_df), len(vix_df))
+            nifty_df = nifty_df.iloc[:min_length]
+            vix_df = vix_df.iloc[:min_length]
+        
+        # Ensure consistent columns
+        required_columns = ['Open', 'High', 'Low', 'Close', 'Volume']
+        for col in required_columns:
+            if col not in nifty_df.columns:
+                if col == 'Volume':
+                    nifty_df[col] = 0  # Add default volume if missing
+                else:
+                    print(f"Error: Required column '{col}' missing from NIFTY data")
+                    return None, None
+                    
+            if col not in vix_df.columns:
+                if col == 'Volume':
+                    vix_df[col] = 0  # Add default volume if missing
+                else:
+                    print(f"Error: Required column '{col}' missing from VIX data")
+                    return None, None
+        
+        # Finally, make both timezone-naive for consistency with the rest of the code
+        if nifty_df.index.tz is not None:
+            nifty_df = nifty_df.tz_localize(None)
+        if vix_df.index.tz is not None:
+            vix_df = vix_df.tz_localize(None)
+        
+        print(f"Successfully processed {len(nifty_df)} records")
+        return nifty_df, vix_df
+        
+    except Exception as e:
+        print(f"Error processing market data: {e}")
+        import traceback
+        traceback.print_exc()
+        return None, None 

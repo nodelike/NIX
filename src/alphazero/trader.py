@@ -405,7 +405,10 @@ class AlphaZeroTrader:
     
     def save_model(self, filename='alphazero_model'):
         """Save model to file"""
-        filepath = os.path.join(self.model_dir, f"{filename}.h5")
+        # Use path without extension
+        filepath = os.path.join(self.model_dir, filename)
+        
+        # Save model with proper extension handling
         self.model.save(filepath)
         print(f"Model saved to {filepath}")
         
@@ -421,7 +424,7 @@ class AlphaZeroTrader:
                 'actions': self.training_history['actions']
             }
             json.dump(serializable_history, f)
-            
+        
     def load_model(self, filename='alphazero_model'):
         """
         Load model from file
@@ -432,9 +435,12 @@ class AlphaZeroTrader:
         Returns:
             True if successful, False otherwise
         """
-        model_path = os.path.join(self.model_dir, f"{filename}.h5")
+        model_path = os.path.join(self.model_dir, f"{filename}")
         
-        if not os.path.exists(model_path):
+        # First, clean up model files to ensure consistent naming
+        self.cleanup_model_files(filename)
+        
+        if not os.path.exists(model_path + ".h5") and not os.path.exists(model_path + "_policy.keras"):
             print(f"Model file not found: {model_path}")
             print("Initializing a new model...")
             
@@ -483,6 +489,134 @@ class AlphaZeroTrader:
                 return False
             except Exception as e2:
                 print(f"Error initializing fallback model: {e2}")
+            return False
+            
+    def cleanup_model_files(self, filename='alphazero_model'):
+        """
+        Clean up model files to ensure consistent naming conventions
+        
+        Args:
+            filename: Base model filename (without extension)
+        """
+        try:
+            base_path = os.path.join(self.model_dir, filename)
+            
+            # Check for inconsistent file naming patterns
+            problematic_files = []
+            
+            # List all files in the model directory
+            all_files = []
+            if os.path.exists(self.model_dir):
+                all_files = os.listdir(self.model_dir)
+            
+            # Create standard filenames
+            standard_policy = f"{filename}_policy.keras"
+            standard_value = f"{filename}_value.keras"
+            standard_history = f"{filename}_history.json"
+            
+            # Check if standard files already exist
+            has_standard_policy = os.path.exists(os.path.join(self.model_dir, standard_policy))
+            has_standard_value = os.path.exists(os.path.join(self.model_dir, standard_value))
+            
+            # Pattern matching for policy files
+            for file in all_files:
+                full_path = os.path.join(self.model_dir, file)
+                
+                # Skip directories
+                if not os.path.isfile(full_path):
+                    continue
+                
+                # Handle policy files
+                if (filename in file and 'policy' in file and file != standard_policy and
+                    (file.endswith('.keras') or file.endswith('.h5'))):
+                    
+                    # Skip if we already have a standard file and this is older
+                    if has_standard_policy:
+                        std_mtime = os.path.getmtime(os.path.join(self.model_dir, standard_policy))
+                        file_mtime = os.path.getmtime(full_path)
+                        
+                        if file_mtime < std_mtime:
+                            print(f"Skipping older policy file: {file}")
+                            continue
+                    
+                    target_file = os.path.join(self.model_dir, standard_policy)
+                    print(f"Found inconsistent policy file: {file}")
+                    print(f"Renaming to: {standard_policy}")
+                    
+                    try:
+                        # If target already exists and we're here, we should replace it
+                        if os.path.exists(target_file):
+                            os.remove(target_file)
+                            
+                        # Rename the file to the standard format
+                        os.rename(full_path, target_file)
+                        print(f"Successfully renamed to standard format")
+                        has_standard_policy = True
+                    except Exception as e:
+                        print(f"Warning: Could not rename file: {e}")
+                        problematic_files.append(file)
+                
+                # Handle value files
+                elif (filename in file and 'value' in file and file != standard_value and
+                     (file.endswith('.keras') or file.endswith('.h5'))):
+                    
+                    # Skip if we already have a standard file and this is older
+                    if has_standard_value:
+                        std_mtime = os.path.getmtime(os.path.join(self.model_dir, standard_value))
+                        file_mtime = os.path.getmtime(full_path)
+                        
+                        if file_mtime < std_mtime:
+                            print(f"Skipping older value file: {file}")
+                            continue
+                    
+                    target_file = os.path.join(self.model_dir, standard_value)
+                    print(f"Found inconsistent value file: {file}")
+                    print(f"Renaming to: {standard_value}")
+                    
+                    try:
+                        # If target already exists and we're here, we should replace it
+                        if os.path.exists(target_file):
+                            os.remove(target_file)
+                            
+                        # Rename the file to the standard format
+                        os.rename(full_path, target_file)
+                        print(f"Successfully renamed to standard format")
+                        has_standard_value = True
+                    except Exception as e:
+                        print(f"Warning: Could not rename file: {e}")
+                        problematic_files.append(file)
+                        
+                # Handle history files
+                elif (filename in file and 'history' in file and file != standard_history and 
+                     file.endswith('.json')):
+                    
+                    target_file = os.path.join(self.model_dir, standard_history)
+                    print(f"Found inconsistent history file: {file}")
+                    print(f"Renaming to: {standard_history}")
+                    
+                    try:
+                        # If target already exists, check which is newer
+                        if os.path.exists(target_file):
+                            std_mtime = os.path.getmtime(target_file)
+                            file_mtime = os.path.getmtime(full_path)
+                            
+                            if file_mtime < std_mtime:
+                                print(f"Skipping older history file")
+                                continue
+                            else:
+                                os.remove(target_file)
+                        
+                        # Rename the file to the standard format
+                        os.rename(full_path, target_file)
+                        print(f"Successfully renamed to standard format")
+                    except Exception as e:
+                        print(f"Warning: Could not rename file: {e}")
+                        problematic_files.append(file)
+            
+            return len(problematic_files) == 0
+            
+        except Exception as e:
+            print(f"Error cleaning up model files: {e}")
             return False
     
     def predict(self, state, use_mcts=False):

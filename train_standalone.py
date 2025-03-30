@@ -147,7 +147,7 @@ def train_model_robust(nifty_df, vix_df, episodes=5, batches=10):
         # Save model
         try:
             print("\nSaving model...")
-            trader.save_model('alphazero_model.h5')
+            trader.save_model('alphazero_model')
             print("Model trained and saved successfully")
             return trader
         except Exception as e:
